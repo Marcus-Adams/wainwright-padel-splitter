@@ -14,6 +14,7 @@ REG_COLUMNS      = ["session_id", "player_email", "player_name", "registered_at"
 PAY_COLUMNS      = ["player_email", "player_name", "amount", "paid_at", "note"]
 PLAYERS_COLUMNS  = ["player_email", "player_name", "whatsapp", "payout_link", "active", "created_at"]
 
+# ----------------- helpers -----------------
 def now_iso() -> str:
     return datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
 
@@ -35,6 +36,7 @@ def currency(v):
 def group_name():
     return st.secrets["sheets"].get("group_name", "Wainwright Paddle Team")
 
+# ----------------- auth -----------------
 def signed_in_email():
     return st.session_state.get("email")
 
@@ -58,11 +60,13 @@ def require_sign_in():
                 return True
     return False
 
+# ----------------- Google Sheets client -----------------
 @st.cache_resource(show_spinner=False)
 def get_gsheet_client():
     raw = st.secrets["gcp_service_account"]
     creds_dict = json.loads(raw) if isinstance(raw, str) else dict(raw)
     pk = creds_dict.get("private_key", "")
+    # Normalise private_key if pasted with literal \n
     if "\n" in pk and "\r\n" not in pk and "\n" not in pk.replace("\\n", "") and "\n" in pk:
         creds_dict["private_key"] = pk.replace("\n", "\n").encode("utf-8").decode("unicode_escape")
     elif "\n" in pk and "\n" not in pk:
@@ -106,11 +110,17 @@ def ensure_all_tabs():
     tabs["meta"]           = ensure_worksheet(sh, "meta",           ["key", "value", "updated_at"])
     return tabs
 
+# ----------------- Batch fetch (values_batch_get) -----------------
 @st.cache_data(show_spinner=False, ttl=20)
 def fetch_all_tables_as_dfs():
     sh = open_db()
     ranges = ["sessions!A1:E", "registrations!A1:D", "payments!A1:E", "players!A1:F"]
-    values_list = sh.batch_get(ranges)
+    resp = sh.values_batch_get(ranges)  # returns {'spreadsheetId':..., 'valueRanges':[ ... ]}
+    value_ranges = resp.get("valueRanges", [])
+    # Ensure list length matches our requested ranges
+    while len(value_ranges) < 4:
+        value_ranges.append({"values": []})
+    values_list = [vr.get("values", []) for vr in value_ranges]
 
     def to_df(vals, expected_header):
         if not vals:
@@ -124,7 +134,7 @@ def fetch_all_tables_as_dfs():
         for c in expected_header:
             if c not in df.columns:
                 df[c] = None
-        return df[expected_header]
+        return df[header]
 
     sessions_df  = to_df(values_list[0], SESSIONS_COLUMNS)
     regs_df      = to_df(values_list[1], REG_COLUMNS)
@@ -136,6 +146,7 @@ def append_row(ws, row):
     ws.append_row(row, value_input_option="USER_ENTERED")
     st.cache_data.clear()
 
+# ----------------- Domain logic -----------------
 def compute_balances(sessions_df, regs_df, payments_df, payer_email):
     balances = {}
     emails = set(regs_df["player_email"].dropna().tolist()) | set(payments_df["player_email"].dropna().tolist())
@@ -165,6 +176,7 @@ def compute_balances(sessions_df, regs_df, payments_df, payer_email):
     balances[payer_email] = -non_payer_total
     return balances
 
+# ----------------- Payments (Monzo) -----------------
 def normalise_monzo_username(raw):
     if not raw:
         return None
@@ -195,14 +207,17 @@ def monzo_request_link(username, amount, description):
     amt = f"{float(amount):.2f}"
     return f"https://monzo.me/{username}/{amt}?d={quote(description)}"
 
+# ----------------- Load all -----------------
 def load_all():
     tabs = ensure_all_tabs()
     sessions, regs, pays, players = fetch_all_tables_as_dfs()
     return tabs, sessions, regs, pays, players
 
+# ----------------- UI helpers -----------------
 def toast_ok(msg): st.success(msg, icon="✅")
 def toast_err(msg): st.error(msg, icon="⚠️")
 
+# ----------------- Pages -----------------
 def page_balances(tabs, sessions, regs, pays, players):
     payer_email = st.secrets["sheets"].get("payer_email", "").strip()
     if not payer_email:
@@ -382,6 +397,7 @@ def page_players(tabs, sessions, regs, pays, players):
         show = players.copy().rename(columns={"player_name":"Name","player_email":"Email","whatsapp":"WhatsApp","payout_link":"Pay link","active":"Active"})
         st.dataframe(show[["Name","Email","WhatsApp","Pay link","Active"]], use_container_width=True)
 
+# ----------------- App -----------------
 st.markdown(f"<h1 style='margin-bottom:0'>🎾 {group_name()}</h1>", unsafe_allow_html=True)
 st.caption("Fair splits for weekly court fees.")
 
