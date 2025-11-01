@@ -9,12 +9,46 @@ from urllib.parse import quote
 
 st.set_page_config(page_title="Padel Splitter", page_icon="🎾", layout="wide")
 
+# ----------------- Styling: top tabs (pretty + mobile-friendly) -----------------
+st.markdown(
+    '''
+    <style>
+    /* Make tabs look like a top pill menu and highlight the active one */
+    .stTabs [role="tablist"] {
+        gap: 0.5rem;
+        flex-wrap: wrap;
+    }
+    .stTabs [role="tab"] {
+        border: 1px solid rgba(49,51,63,0.2);
+        padding: 0.5rem 0.9rem;
+        border-radius: 9999px;
+        background: rgba(49,51,63,0.04);
+        color: inherit;
+    }
+    .stTabs [role="tab"][aria-selected="true"] {
+        background: #2563eb !important;     /* blue */
+        color: white !important;
+        border-color: #2563eb !important;
+    }
+    .stTabs [role="tab"]:hover {
+        background: rgba(37,99,235,0.12);
+    }
+    /* Reduce extra top padding on mobile */
+    @media (max-width: 640px) {
+        .block-container { padding-top: 1rem; }
+    }
+    </style>
+    ''',
+    unsafe_allow_html=True
+)
+
+# ----------------- Columns spec -----------------
 SESSIONS_COLUMNS = ["session_id", "date", "fee", "notes", "created_at"]
 REG_COLUMNS      = ["session_id", "player_email", "player_name", "registered_at"]
 PAY_COLUMNS      = ["player_email", "player_name", "amount", "paid_at", "note"]
 PLAYERS_COLUMNS  = ["player_email", "player_name", "whatsapp", "payout_link", "active", "created_at"]
 
-# ----------------- helpers -----------------
+# ----------------- Helpers -----------------
 def now_iso() -> str:
     return datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
 
@@ -36,7 +70,7 @@ def currency(v):
 def group_name():
     return st.secrets["sheets"].get("group_name", "Wainwright Paddle Team")
 
-# ----------------- auth -----------------
+# ----------------- Auth (lightweight join code) -----------------
 def signed_in_email():
     return st.session_state.get("email")
 
@@ -65,11 +99,13 @@ def require_sign_in():
 def get_gsheet_client():
     raw = st.secrets["gcp_service_account"]
     creds_dict = json.loads(raw) if isinstance(raw, str) else dict(raw)
-    pk = creds_dict.get("private_key", "")
     # Normalise private_key if pasted with literal \n
-    if "\n" in pk and "\r\n" not in pk and "\n" not in pk.replace("\\n", "") and "\n" in pk:
+    pk = creds_dict.get("private_key", "")
+    if "\n" in pk and "\n" not in pk.replace("\\n", "") and "\r\n" not in pk and "\n" in pk:
         creds_dict["private_key"] = pk.replace("\n", "\n").encode("utf-8").decode("unicode_escape")
     elif "\n" in pk and "\n" not in pk:
+        creds_dict["private_key"] = pk.replace("\n", "\n").encode("utf-8").decode("unicode_escape")
+    elif "\n" in pk and "\r\n" not in pk and "\n" in pk:
         creds_dict["private_key"] = pk.replace("\n", "\n").encode("utf-8").decode("unicode_escape")
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
@@ -110,14 +146,13 @@ def ensure_all_tabs():
     tabs["meta"]           = ensure_worksheet(sh, "meta",           ["key", "value", "updated_at"])
     return tabs
 
-# ----------------- Batch fetch (values_batch_get) -----------------
+# ----------------- Batch fetch (values_batch_get) + caching -----------------
 @st.cache_data(show_spinner=False, ttl=20)
 def fetch_all_tables_as_dfs():
     sh = open_db()
     ranges = ["sessions!A1:E", "registrations!A1:D", "payments!A1:E", "players!A1:F"]
     resp = sh.values_batch_get(ranges)  # returns {'spreadsheetId':..., 'valueRanges':[ ... ]}
     value_ranges = resp.get("valueRanges", [])
-    # Ensure list length matches our requested ranges
     while len(value_ranges) < 4:
         value_ranges.append({"values": []})
     values_list = [vr.get("values", []) for vr in value_ranges]
@@ -134,7 +169,7 @@ def fetch_all_tables_as_dfs():
         for c in expected_header:
             if c not in df.columns:
                 df[c] = None
-        return df[header]
+        return df[expected_header]
 
     sessions_df  = to_df(values_list[0], SESSIONS_COLUMNS)
     regs_df      = to_df(values_list[1], REG_COLUMNS)
@@ -397,22 +432,24 @@ def page_players(tabs, sessions, regs, pays, players):
         show = players.copy().rename(columns={"player_name":"Name","player_email":"Email","whatsapp":"WhatsApp","payout_link":"Pay link","active":"Active"})
         st.dataframe(show[["Name","Email","WhatsApp","Pay link","Active"]], use_container_width=True)
 
-# ----------------- App -----------------
+# ----------------- App shell -----------------
 st.markdown(f"<h1 style='margin-bottom:0'>🎾 {group_name()}</h1>", unsafe_allow_html=True)
 st.caption("Fair splits for weekly court fees.")
 
 tabs, sessions, regs, pays, players = load_all()
 
-pg = st.sidebar.radio("Navigation", ["Balances", "Register", "Sessions", "Players / Profile"])
+# TOP NAV TABS (instead of sidebar)
+t1, t2, t3, t4 = st.tabs(["Balances", "Register", "Sessions", "Players / Profile"])
 
-if pg == "Balances":
+with t1:
     page_balances(tabs, sessions, regs, pays, players)
-elif pg == "Register":
+with t2:
     page_register(tabs, sessions, regs, pays, players)
-elif pg == "Sessions":
+with t3:
     page_sessions(tabs, sessions, regs, pays, players)
-else:
+with t4:
     page_players(tabs, sessions, regs, pays, players)
 
-st.sidebar.markdown("---")
-st.sidebar.caption("Made with ❤️ for fair splits.")
+# Footer
+st.markdown("---")
+st.markdown("<div style='text-align:center; opacity:0.6'>Made with ❤️ for fair splits.</div>", unsafe_allow_html=True)
