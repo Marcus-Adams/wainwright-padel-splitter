@@ -17,19 +17,8 @@ st.markdown(
         background: radial-gradient(1200px 600px at 10% -10%, #dbeafe 0%, rgba(219,234,254,0) 60%),
                     radial-gradient(800px 400px at 110% 10%, #fce7f3 0%, rgba(252,231,243,0) 60%);
         z-index: -1; }
-    /* Nav buttons look like pills */
-    .nav-row .stButton>button {
-        border: 1px solid rgba(49,51,63,.2);
-        background: rgba(49,51,63,.04);
-        color: inherit;
-        padding: .45rem .9rem;
-        border-radius: 9999px;
-    }
-    .nav-row .stButton>button:hover { background: rgba(37,99,235,.08); }
-    .nav-row .stButton.primary>button {
-        background:#2563eb; border-color:#2563eb; color:white;
-    }
-    .chip { background:#eef2ff; color:#3730a3; padding:.3rem .6rem; border-radius:9999px; font-size:.9rem; white-space:nowrap; }
+    .chip { background:#eef2ff; color:#3730a3; padding:.35rem .65rem; border-radius:9999px; font-size:.9rem; white-space:nowrap; }
+    .topbar { margin-top:.25rem; margin-bottom:.5rem; }
     </style>
     ''', unsafe_allow_html=True
 )
@@ -94,10 +83,6 @@ def login_page():
     st.stop()
 
 # ----------------- Google Sheets client -----------------
-import gspread
-from google.oauth2.service_account import Credentials
-import json
-
 @st.cache_resource(show_spinner=False)
 def get_gsheet_client():
     raw = st.secrets["gcp_service_account"]
@@ -210,7 +195,6 @@ def payer_monzo_username():
 
 def monzo_request_link(username, amount, description):
     amt = f"{float(amount):.2f}"
-    from urllib.parse import quote
     return f"https://monzo.me/{username}/{amt}?d={quote(description)}"
 
 def load_all():
@@ -343,41 +327,25 @@ if not signed_in_email():
 st.markdown(f"<h1 style='margin-bottom:0'>🎾 {group_name()}</h1>", unsafe_allow_html=True)
 st.caption("Fair splits for weekly court fees.")
 
-# NAV ROW: left = page pills, right = logged-in chip + logout (right-aligned)
+# NAV ROW: left = radio pills, right = logged-in chip + logout (aligned right, same row)
 if "page" not in st.session_state:
     st.session_state["page"] = "Balances"
 
 pages = ["Balances", "Register", "Sessions", "Players / Profile"]
-left_cols = [1]*len(pages) + [5]  # spacer at the end
-cols = st.columns(left_cols + [3])  # last col is right controls
+left, right = st.columns([3, 2], gap="small")
 
-# Left: nav buttons
-for i, p in enumerate(pages):
-    is_active = (st.session_state["page"] == p)
-    with cols[i]:
-        # wrap a class for active style
-        c = st.container()
-        with c:
-            btn = st.button(p, key=f"nav_{p}")
-        # Patch class for CSS 'primary' when active
-        if is_active:
-            st.markdown('<script>var bs=document.querySelectorAll(`[data-testid="stButton"][data-baseweb="button"]`);</script>', unsafe_allow_html=True)
-    if cols[i].button if False else False:
-        pass
-    if btn:
-        st.session_state["page"] = p
-        st.experimental_rerun()
+with left:
+    current_index = pages.index(st.session_state["page"]) if st.session_state.get("page") in pages else 0
+    choice = st.radio("Navigation", pages, index=current_index, horizontal=True, label_visibility="collapsed", key="nav_radio")
+    st.session_state["page"] = choice
 
-# Right: status + logout aligned horizontally
-with cols[-1]:
+with right:
     c1, c2 = st.columns([3,1])
     with c1:
-        st.markdown(f"<div style='display:flex;justify-content:flex-end;align-items:center;height:38px'><span class='chip'>Logged in as {signed_in_email()}</span></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='topbar' style='display:flex;justify-content:flex-end;align-items:center;height:38px'><span class='chip'>Logged in as {signed_in_email()}</span></div>", unsafe_allow_html=True)
     with c2:
         if st.button("Log out", key="logout_btn"):
             logout()
-
-st.markdown("<div class='nav-row' style='height:.5rem'></div>", unsafe_allow_html=True)
 
 tabs, sessions, regs, pays, players = load_all()
 
