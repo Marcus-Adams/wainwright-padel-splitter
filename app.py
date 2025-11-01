@@ -61,24 +61,34 @@ def currency(v):
 def group_name():
     return st.secrets["sheets"].get("group_name", "Wainwright Paddle Team")
 
-# ----------------- Auth (lightweight join code) -----------------
+# ----------------- Auth (global login gate) -----------------
 def signed_in_email():
     return st.session_state.get("email")
 
-def require_sign_in(form_key: str = "signin"):
+def login_gate():
+    """Show a full-page login form until the user is signed in."""
     if signed_in_email():
         return True
-    st.info("Sign in to continue.")
-    with st.form(form_key):
+
+    st.markdown("""
+        <div style='display:flex;justify-content:center;margin-top:2rem'>
+          <div style='max-width:520px;width:100%;background:rgba(49,51,63,0.04);padding:1rem 1.25rem;border-radius:12px;border:1px solid rgba(49,51,63,0.2)'>
+            <h3 style='margin:0 0 .5rem 0'>Sign in</h3>
+            <p style='margin:0 0 .75rem 0;opacity:.8'>Enter your email and the group passcode to continue.</p>
+          </div>
+        </div>
+    """, unsafe_allow_html=True)
+
+    with st.form("signin_global"):
         email = st.text_input("Your email")
-        join_code = st.text_input("Group join code", type="password")
+        join_code = st.text_input("Group passcode", type="password")
         submitted = st.form_submit_button("Sign in", use_container_width=True)
         if submitted:
             code = st.secrets.get("auth", {}).get("join_code", "").strip()
             if not email:
                 st.error("Email is required.", icon="⚠️")
             elif code and join_code != code:
-                st.error("Join code is incorrect.", icon="⚠️")
+                st.error("Passcode is incorrect.", icon="⚠️")
             else:
                 st.session_state["email"] = email.strip().lower()
                 st.success("Signed in.", icon="✅")
@@ -91,12 +101,12 @@ def get_gsheet_client():
     raw = st.secrets["gcp_service_account"]
     creds_dict = json.loads(raw) if isinstance(raw, str) else dict(raw)
     pk = creds_dict.get("private_key", "")
-    if "\n" in pk and "\n" not in pk.replace("\\n", "") and "\r\n" not in pk and "\n" in pk:
-        creds_dict["private_key"] = pk.replace("\n", "\n").encode("utf-8").decode("unicode_escape")
-    elif "\n" in pk and "\n" not in pk:
-        creds_dict["private_key"] = pk.replace("\n", "\n").encode("utf-8").decode("unicode_escape")
-    elif "\n" in pk and "\r\n" not in pk and "\n" in pk:
-        creds_dict["private_key"] = pk.replace("\n", "\n").encode("utf-8").decode("unicode_escape")
+    # Normalise private_key if pasted with literal \n
+    if "\n" in pk and "\n" not in pk.replace("\\n", ""):
+        try:
+            creds_dict["private_key"] = pk.encode("utf-8").decode("unicode_escape")
+        except Exception:
+            pass
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive",
@@ -262,16 +272,36 @@ def page_balances(tabs, sessions, regs, pays, players):
     st.caption("Positive means the player **owes** the payer. Negative means they have **credit**.")
     st.dataframe(df[["Player", "Email", "Balance"]].style.format({"Balance": "£{:.2f}"}), use_container_width=True)
 
+    # Only allow the signed-in user to log a payment for themselves
+    me = signed_in_email()
     monzo_user = payer_monzo_username()
-    if monzo_user:
-        st.divider()
-        st.subheader("Quick Monzo request links")
-        for _, row in df.iterrows():
-            if row["Email"] == payer_email:
-                continue
-            if row["Balance"] > 0.0:
-                link = monzo_request_link(monzo_user, row["Balance"], f"Padel {group_name()}")
-                st.markdown(f"- **{row['Player']}** — {currency(row['Balance'])} → [Monzo Request]({link})")
+
+    st.divider()
+    st.subheader("Log a payment (you only)")
+    payer = st.secrets["sheets"].get("payer_email", "").strip()
+    if me == payer:
+        st.info("You're the payer. Players log their own payments; you can't log on behalf of others.", icon="ℹ️")
+    else:
+        # Pre-fill my name if known
+        my_name = names.get(me, "")
+        with st.form("log_payment_self"):
+            c1, c2 = st.columns([2,1])
+            with c1:
+                st.text_input("Your email", value=me, disabled=True)
+                name = st.text_input("Your name", value=my_name)
+                note = st.text_input("Note (optional)", value="")
+            with c2:
+                amount = st.number_input("Amount (£)", min_value=0.0, step=1.0, format="%.2f")
+                paid_at = st.date_input("Paid on", value=date.today())
+            submitted = st.form_submit_button("Add payment", use_container_width=True)
+            if submitted:
+                if not name:
+                    toast_err("Name is required.")
+                elif amount <= 0:
+                    toast_err("Amount must be greater than zero.")
+                else:
+                    append_row(tabs["payments"], [me, name, amount, to_iso_date(paid_at), note])
+                    toast_ok("Payment recorded.")
 
     st.divider()
     st.subheader("WhatsApp settle‑up message")
@@ -288,29 +318,7 @@ def page_balances(tabs, sessions, regs, pays, players):
     wa_text = "\n".join(lines) if len(lines) > 2 else "No one owes anything right now 🎉"
     st.text_area("Copy & paste into WhatsApp:", value=wa_text, height=200)
 
-    st.divider()
-    st.subheader("Log a payment")
-    with st.form("log_payment"):
-        c1, c2 = st.columns([2,1])
-        with c1:
-            who = st.selectbox("Who paid the payer?", df[df["Email"] != payer_email]["Email"].tolist())
-            name_default = names.get(who, "")
-            name = st.text_input("Player name", value=name_default)
-            note = st.text_input("Note (optional)", value="")
-        with c2:
-            amount = st.number_input("Amount (£)", min_value=0.0, step=1.0, format="%.2f")
-            paid_at = st.date_input("Paid on", value=date.today())
-        submitted = st.form_submit_button("Add payment", use_container_width=True)
-        if submitted:
-            if amount <= 0:
-                toast_err("Amount must be greater than zero.")
-            else:
-                append_row(tabs["payments"], [who, name, amount, to_iso_date(paid_at), note])
-                toast_ok("Payment recorded.")
-
 def page_register(tabs, sessions, regs, pays, players):
-    if not require_sign_in("signin_register"):
-        return
     st.subheader("Register that you played")
     if sessions.empty:
         st.info("No sessions yet. Ask the payer/admin to add one on the Sessions page.")
@@ -391,8 +399,6 @@ def page_sessions(tabs, sessions, regs, pays, players):
         )
 
 def page_players(tabs, sessions, regs, pays, players):
-    if not require_sign_in("signin_profile"):
-        return
     email = signed_in_email()
     st.subheader("My profile")
     existing = players[players["player_email"] == email]
@@ -426,9 +432,13 @@ def page_players(tabs, sessions, regs, pays, players):
 st.markdown(f"<h1 style='margin-bottom:0'>🎾 {group_name()}</h1>", unsafe_allow_html=True)
 st.caption("Fair splits for weekly court fees.")
 
+# Global login gate (must sign in before anything else)
+if not login_gate():
+    st.stop()
+
 tabs, sessions, regs, pays, players = load_all()
 
-# TOP NAV TABS (instead of sidebar)
+# TOP NAV TABS
 t1, t2, t3, t4 = st.tabs(["Balances", "Register", "Sessions", "Players / Profile"])
 
 with t1:
