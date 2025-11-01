@@ -9,31 +9,37 @@ from urllib.parse import quote
 
 st.set_page_config(page_title="Padel Splitter", page_icon="🎾", layout="wide")
 
-# ----------------- Styling: top tabs (pretty + mobile-friendly) -----------------
+# ----------------- Global styling -----------------
 st.markdown(
     '''
     <style>
-    .stTabs [role="tablist"] { gap: 0.5rem; flex-wrap: wrap; }
+    /* Background gradient for login screen */
+    .login-bg {
+        position: fixed; inset: 0;
+        background: radial-gradient(1200px 600px at 10% -10%, #dbeafe 0%, rgba(219,234,254,0) 60%),
+                    radial-gradient(800px 400px at 110% 10%, #fce7f3 0%, rgba(252,231,243,0) 60%);
+        z-index: -1;
+    }
+    /* Top pill tabs */
+    .stTabs [role="tablist"] { gap: .5rem; flex-wrap: wrap; }
     .stTabs [role="tab"] {
-        border: 1px solid rgba(49,51,63,0.2);
-        padding: 0.5rem 0.9rem;
-        border-radius: 9999px;
-        background: rgba(49,51,63,0.04);
-        color: inherit;
+        border: 1px solid rgba(49,51,63,.2);
+        padding: .5rem .9rem; border-radius: 9999px;
+        background: rgba(49,51,63,.04); color: inherit;
     }
     .stTabs [role="tab"][aria-selected="true"] {
-        background: #2563eb !important;
-        color: white !important;
-        border-color: #2563eb !important;
+        background: #2563eb !important; color: white !important; border-color: #2563eb !important;
     }
-    .stTabs [role="tab"]:hover { background: rgba(37,99,235,0.12); }
+    .stTabs [role="tab"]:hover { background: rgba(37,99,235,.12); }
     @media (max-width: 640px) { .block-container { padding-top: 1rem; } }
+    /* Top bar alignment */
+    .topbar { display:flex; justify-content:flex-end; align-items:center; gap:.75rem; }
+    .chip { background:#eef2ff; color:#3730a3; padding:.25rem .6rem; border-radius:9999px; font-size:.9rem; }
     </style>
-    ''',
-    unsafe_allow_html=True
+    ''', unsafe_allow_html=True
 )
 
-# ----------------- Columns spec -----------------
+# ----------------- Column specs -----------------
 SESSIONS_COLUMNS = ["session_id", "date", "fee", "notes", "created_at"]
 REG_COLUMNS      = ["session_id", "player_email", "player_name", "registered_at"]
 PAY_COLUMNS      = ["player_email", "player_name", "amount", "paid_at", "note"]
@@ -61,39 +67,55 @@ def currency(v):
 def group_name():
     return st.secrets["sheets"].get("group_name", "Wainwright Paddle Team")
 
-# ----------------- Auth (global login gate) -----------------
+# ----------------- Auth utilities -----------------
 def signed_in_email():
     return st.session_state.get("email")
 
-def login_gate():
-    """Show a full-page login form until the user is signed in."""
-    if signed_in_email():
-        return True
+def logout():
+    for k in list(st.session_state.keys()):
+        del st.session_state[k]
+    st.rerun()
 
-    st.markdown("""
-        <div style='display:flex;justify-content:center;margin-top:2rem'>
-          <div style='max-width:520px;width:100%;background:rgba(49,51,63,0.04);padding:1rem 1.25rem;border-radius:12px;border:1px solid rgba(49,51,63,0.2)'>
-            <h3 style='margin:0 0 .5rem 0'>Sign in</h3>
-            <p style='margin:0 0 .75rem 0;opacity:.8'>Enter your email and the group passcode to continue.</p>
-          </div>
-        </div>
-    """, unsafe_allow_html=True)
+# Pretty, *separate* login screen
+def login_page():
+    st.markdown('<div class="login-bg"></div>', unsafe_allow_html=True)
+    st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
+    c1, c2, c3 = st.columns([1,2,1])
+    with c2:
+        st.markdown(
+            f"""
+            <div style='background:white; border:1px solid rgba(49,51,63,.15); border-radius:16px; padding:1.25rem 1.25rem 1rem'>
+                <div style='display:flex;align-items:center;gap:.6rem;margin-bottom:.75rem'>
+                    <div style='font-size:1.75rem'>🎾</div>
+                    <div>
+                      <div style='font-size:1.05rem;opacity:.7'>Padel Splitter</div>
+                      <div style='font-size:1.35rem;font-weight:700'>{group_name()}</div>
+                    </div>
+                </div>
+                <div style='opacity:.8;margin-bottom:.75rem'>Sign in to continue. Use your email and the group passcode.</div>
+            </div>
+            """, unsafe_allow_html=True
+        )
+        with st.form("signin_global"):
+            email = st.text_input("Email address")
+            join_code = st.text_input("Group passcode", type="password")
+            col_a, col_b = st.columns([1,1])
+            with col_a:
+                submitted = st.form_submit_button("Log in", use_container_width=True, type="primary")
+            with col_b:
+                st.form_submit_button("Cancel", use_container_width=True, disabled=True)
+            if submitted:
+                code = st.secrets.get("auth", {}).get("join_code", "").strip()
+                if not email:
+                    st.error("Email is required.", icon="⚠️")
+                elif code and join_code != code:
+                    st.error("Passcode is incorrect.", icon="⚠️")
+                else:
+                    st.session_state["email"] = email.strip().lower()
+                    st.success("Signed in.", icon="✅")
+                    st.rerun()
 
-    with st.form("signin_global"):
-        email = st.text_input("Your email")
-        join_code = st.text_input("Group passcode", type="password")
-        submitted = st.form_submit_button("Sign in", use_container_width=True)
-        if submitted:
-            code = st.secrets.get("auth", {}).get("join_code", "").strip()
-            if not email:
-                st.error("Email is required.", icon="⚠️")
-            elif code and join_code != code:
-                st.error("Passcode is incorrect.", icon="⚠️")
-            else:
-                st.session_state["email"] = email.strip().lower()
-                st.success("Signed in.", icon="✅")
-                return True
-    return False
+    st.stop()
 
 # ----------------- Google Sheets client -----------------
 @st.cache_resource(show_spinner=False)
@@ -101,7 +123,6 @@ def get_gsheet_client():
     raw = st.secrets["gcp_service_account"]
     creds_dict = json.loads(raw) if isinstance(raw, str) else dict(raw)
     pk = creds_dict.get("private_key", "")
-    # Normalise private_key if pasted with literal \n
     if "\n" in pk and "\n" not in pk.replace("\\n", ""):
         try:
             creds_dict["private_key"] = pk.encode("utf-8").decode("unicode_escape")
@@ -169,7 +190,7 @@ def fetch_all_tables_as_dfs():
         for c in expected_header:
             if c not in df.columns:
                 df[c] = None
-        return df[header]
+        return df[expected_header]
 
     sessions_df  = to_df(values_list[0], SESSIONS_COLUMNS)
     regs_df      = to_df(values_list[1], REG_COLUMNS)
@@ -272,17 +293,15 @@ def page_balances(tabs, sessions, regs, pays, players):
     st.caption("Positive means the player **owes** the payer. Negative means they have **credit**.")
     st.dataframe(df[["Player", "Email", "Balance"]].style.format({"Balance": "£{:.2f}"}), use_container_width=True)
 
-    # Only allow the signed-in user to log a payment for themselves
     me = signed_in_email()
     monzo_user = payer_monzo_username()
+    payer = st.secrets["sheets"].get("payer_email", "").strip()
 
     st.divider()
     st.subheader("Log a payment (you only)")
-    payer = st.secrets["sheets"].get("payer_email", "").strip()
     if me == payer:
         st.info("You're the payer. Players log their own payments; you can't log on behalf of others.", icon="ℹ️")
     else:
-        # Pre-fill my name if known
         my_name = names.get(me, "")
         with st.form("log_payment_self"):
             c1, c2 = st.columns([2,1])
@@ -429,12 +448,21 @@ def page_players(tabs, sessions, regs, pays, players):
         st.dataframe(show[["Name","Email","WhatsApp","Pay link","Active"]], use_container_width=True)
 
 # ----------------- App shell -----------------
-st.markdown(f"<h1 style='margin-bottom:0'>🎾 {group_name()}</h1>", unsafe_allow_html=True)
-st.caption("Fair splits for weekly court fees.")
+# Separate login screen first
+if not signed_in_email():
+    login_page()
 
-# Global login gate (must sign in before anything else)
-if not login_gate():
-    st.stop()
+# App header
+st.markdown(f"<h1 style='margin-bottom:0'>🎾 {group_name()}</h1>", unsafe_allow_html=True)
+# Right-aligned logged-in info + logout
+with st.container():
+    c_left, c_right = st.columns([3,2])
+    with c_right:
+        st.markdown(f"<div class='topbar'><span class='chip'>Logged in as {signed_in_email()}</span></div>", unsafe_allow_html=True)
+        logout_clicked = st.button("Log out", key="logout_btn")
+        if logout_clicked:
+            logout()
+st.caption("Fair splits for weekly court fees.")
 
 tabs, sessions, regs, pays, players = load_all()
 
