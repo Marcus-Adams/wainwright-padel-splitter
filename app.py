@@ -13,11 +13,7 @@ st.set_page_config(page_title="Padel Splitter", page_icon="🎾", layout="wide")
 st.markdown(
     '''
     <style>
-    /* Make tabs look like a top pill menu and highlight the active one */
-    .stTabs [role="tablist"] {
-        gap: 0.5rem;
-        flex-wrap: wrap;
-    }
+    .stTabs [role="tablist"] { gap: 0.5rem; flex-wrap: wrap; }
     .stTabs [role="tab"] {
         border: 1px solid rgba(49,51,63,0.2);
         padding: 0.5rem 0.9rem;
@@ -26,17 +22,12 @@ st.markdown(
         color: inherit;
     }
     .stTabs [role="tab"][aria-selected="true"] {
-        background: #2563eb !important;     /* blue */
+        background: #2563eb !important;
         color: white !important;
         border-color: #2563eb !important;
     }
-    .stTabs [role="tab"]:hover {
-        background: rgba(37,99,235,0.12);
-    }
-    /* Reduce extra top padding on mobile */
-    @media (max-width: 640px) {
-        .block-container { padding-top: 1rem; }
-    }
+    .stTabs [role="tab"]:hover { background: rgba(37,99,235,0.12); }
+    @media (max-width: 640px) { .block-container { padding-top: 1rem; } }
     </style>
     ''',
     unsafe_allow_html=True
@@ -74,11 +65,11 @@ def group_name():
 def signed_in_email():
     return st.session_state.get("email")
 
-def require_sign_in():
+def require_sign_in(form_key: str = "signin"):
     if signed_in_email():
         return True
     st.info("Sign in to continue.")
-    with st.form("signin"):
+    with st.form(form_key):
         email = st.text_input("Your email")
         join_code = st.text_input("Group join code", type="password")
         submitted = st.form_submit_button("Sign in", use_container_width=True)
@@ -99,7 +90,6 @@ def require_sign_in():
 def get_gsheet_client():
     raw = st.secrets["gcp_service_account"]
     creds_dict = json.loads(raw) if isinstance(raw, str) else dict(raw)
-    # Normalise private_key if pasted with literal \n
     pk = creds_dict.get("private_key", "")
     if "\n" in pk and "\n" not in pk.replace("\\n", "") and "\r\n" not in pk and "\n" in pk:
         creds_dict["private_key"] = pk.replace("\n", "\n").encode("utf-8").decode("unicode_escape")
@@ -151,7 +141,7 @@ def ensure_all_tabs():
 def fetch_all_tables_as_dfs():
     sh = open_db()
     ranges = ["sessions!A1:E", "registrations!A1:D", "payments!A1:E", "players!A1:F"]
-    resp = sh.values_batch_get(ranges)  # returns {'spreadsheetId':..., 'valueRanges':[ ... ]}
+    resp = sh.values_batch_get(ranges)
     value_ranges = resp.get("valueRanges", [])
     while len(value_ranges) < 4:
         value_ranges.append({"values": []})
@@ -169,7 +159,7 @@ def fetch_all_tables_as_dfs():
         for c in expected_header:
             if c not in df.columns:
                 df[c] = None
-        return df[expected_header]
+        return df[header]
 
     sessions_df  = to_df(values_list[0], SESSIONS_COLUMNS)
     regs_df      = to_df(values_list[1], REG_COLUMNS)
@@ -319,7 +309,7 @@ def page_balances(tabs, sessions, regs, pays, players):
                 toast_ok("Payment recorded.")
 
 def page_register(tabs, sessions, regs, pays, players):
-    if not require_sign_in():
+    if not require_sign_in("signin_register"):
         return
     st.subheader("Register that you played")
     if sessions.empty:
@@ -401,7 +391,7 @@ def page_sessions(tabs, sessions, regs, pays, players):
         )
 
 def page_players(tabs, sessions, regs, pays, players):
-    if not require_sign_in():
+    if not require_sign_in("signin_profile"):
         return
     email = signed_in_email()
     st.subheader("My profile")
@@ -450,6 +440,5 @@ with t3:
 with t4:
     page_players(tabs, sessions, regs, pays, players)
 
-# Footer
 st.markdown("---")
 st.markdown("<div style='text-align:center; opacity:0.6'>Made with ❤️ for fair splits.</div>", unsafe_allow_html=True)
