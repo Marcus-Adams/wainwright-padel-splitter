@@ -371,8 +371,6 @@ def page_balances(tabs, sessions, regs, pays, players):
             share_url_sel = f"https://wa.me/?text={quote(msg)}"
             try: st.link_button("Open WhatsApp (group message)", share_url_sel, use_container_width=True, type="primary")
             except Exception: st.markdown(f"[Open WhatsApp (group message)]({share_url_sel})")
-            st.caption("Tip: or copy the message below and paste into your group chat:")
-            st.code(msg)
         else:
             st.info("Select at least one player to generate a combined message.", icon="ℹ️")
     else:
@@ -511,10 +509,10 @@ with header_right:
     st.markdown(f"<div class='top-right'><span class='chip'>Logged in as {signed_in_email()}</span></div>", unsafe_allow_html=True)
 
 if "page" not in st.session_state:
-    st.session_state["page"] = "Balances"
+    st.session_state["page"] = "Payments"
 
 # 5 equal-width pills including Logout
-pages = ["Balances", "Register", "Sessions", "Profile"]
+pages = ["Payments", "Register", "Sessions", "Profile"]
 nav_cols = st.columns([1,1,1,1,1])
 
 # Left 4: pages
@@ -535,7 +533,7 @@ tabs = ensure_all_tabs()
 sessions, regs, pays, players = fetch_all_tables_as_dfs()
 
 page = st.session_state["page"]
-if page == "Balances":
+if page in ("Payments", "Balances"):
     page_balances(tabs, sessions, regs, pays, players)
 elif page == "Register":
     page_register(tabs, sessions, regs, pays, players)
