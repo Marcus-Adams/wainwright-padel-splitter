@@ -37,7 +37,7 @@ Everything is in a single `app.py`. Data model is five worksheets in one Google 
 ### 1) `meta` (configuration)
 | key            | value                    | updated_at           |
 |----------------|--------------------------|----------------------|
-| group_name     | Wainwright Padel Team    | 2025-11-02T10:00:00Z |
+| group_name     | Your Name Padel Team    | 2025-11-02T10:00:00Z |
 | payer_email    | example@domain.com       | 2025-11-02T10:00:00Z |
 | monzo_username | monzo.me/yourusername    | 2025-11-02T10:00:00Z |
 | join_code      | your-passcode            | 2025-11-02T10:00:00Z |
@@ -114,8 +114,6 @@ Everything is in a single `app.py`. Data model is five worksheets in one Google 
    # REQUIRED: your Google Sheet ID
    db_key = "YOUR_SHEET_ID"
    ```
-
-   > **Do not** add `group_name`, `payer_email`, `monzo_username`, or `join_code` to secrets — they’re read from the **Sheet → `meta`**.
 
 4. Click **Deploy**.
 
