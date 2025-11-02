@@ -341,9 +341,9 @@ def page_register(tabs, sessions, regs, pays, players):
 
     if not regs_for_selected.empty:
         regs_for_selected["Registered"] = regs_for_selected["registered_at"].map(fmt_ts_ddmm)
-        regs_for_selected["Date"] = fmt_uk_date(sid)
+        regs_for_selected["Session Date"] = fmt_uk_date(sid)
         out = regs_for_selected.rename(columns={"player_name":"Name","player_email":"Email"})
-        st.dataframe(out[["Date","Name","Email","Registered"]], use_container_width=True)
+        st.dataframe(out[["Session Date","Name","Email","Registered"]], use_container_width=True, hide_index=True)
 
 def page_sessions(tabs, sessions, regs, pays, players):
     st.subheader("Sessions (admin)")
