@@ -271,10 +271,18 @@ def page_balances(tabs, sessions, regs, pays, players):
         st.info("You're the payer. Players log their own payments; you can't log on behalf of others.", icon="ℹ️")
     else:
         my_name = names.get(me, "")
-        tabs_pay = st.tabs(["Pay manually, and log paid", "Pay by Monzo"], key="pay_tabs")
 
-        # Option 1: Manual + log
-        with tabs_pay[0]:
+        # Replace tabs with a persistent, horizontal radio (preselect Monzo)
+        pay_mode = st.radio(
+            "Payment method",
+            ["Pay manually, and log paid", "Pay by Monzo"],
+            horizontal=True,
+            index=1,
+            key="pay_mode_choice",
+            help="Choose how you want to pay and record it."
+        )
+
+        if pay_mode == "Pay manually, and log paid":
             with st.form("log_payment_self_manual"):
                 c1, c2 = st.columns([2,1])
                 with c1:
@@ -292,8 +300,7 @@ def page_balances(tabs, sessions, regs, pays, players):
                         st.session_state["flash_msg"] = "Payment recorded and balances updated."
                         st.rerun()
 
-        # Option 2: Monzo + log
-        with tabs_pay[1]:
+        else:  # Pay by Monzo
             st.caption("Pay the payer securely via Monzo. We’ll prefill the amount and reference; then confirm below to log it.")
             c1, c2 = st.columns([2,1])
             with c1:
@@ -346,7 +353,6 @@ def page_balances(tabs, sessions, regs, pays, players):
     st.caption("Option B — build a **combined message** for the group from selected players:")
     options = []
     for _, r in owe_df.iterrows():
-        # Having numbers is optional here; you’re posting to a group, not individuals.
         options.append((r["Player"], r["Balance"]))
 
     if options:
