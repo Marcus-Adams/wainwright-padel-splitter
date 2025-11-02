@@ -23,21 +23,32 @@ st.markdown(
         padding: .45rem .9rem !important;
         border: 1px solid rgba(49,51,63,.2);
         background: rgba(49,51,63,.04);
+        white-space: nowrap;              /* single line */
     }
-    /* Primary buttons (we use for active nav) */
+    /* Primary buttons (active nav) */
     .stButton>button[kind="primary"] {
-        background: #dc2626 !important; /* red-600 */
+        background: #dc2626 !important;   /* red-600 */
         border-color: #dc2626 !important;
         color: white !important;
     }
     .stButton>button[kind="primary"]:hover {
-        background: #b91c1c !important; /* red-700 */
+        background: #b91c1c !important;   /* red-700 */
         border-color: #b91c1c !important;
         color: white !important;
     }
     /* Right chip */
-    .chip { background:#eef2ff; color:#3730a3; padding:.35rem .65rem; border-radius:9999px; font-size:.9rem; white-space:nowrap; }
+    .chip {
+        background:#eef2ff; color:#3730a3;
+        padding:.35rem .65rem; border-radius:9999px;
+        font-size:.9rem; white-space:nowrap;
+        max-width: 220px; text-overflow: ellipsis; overflow: hidden; display:inline-block;
+    }
     .topbar { margin-top:.25rem; margin-bottom:.5rem; }
+    /* Mobile tweaks */
+    @media (max-width: 600px) {
+        .stButton>button { padding:.35rem .7rem !important; font-size:.88rem !important; }
+        .chip { max-width: 140px; font-size:.85rem; }
+    }
     </style>
     ''', unsafe_allow_html=True
 )
@@ -319,7 +330,7 @@ def page_sessions(tabs, sessions, regs, pays, players):
     view = pd.DataFrame(rows)
     if not view.empty: st.dataframe(view.style.format({"Fee":"£{:.2f}","Per-person share":"£{:.2f}"}), use_container_width=True)
 
-def page_my_profile(tabs, sessions, regs, pays, players):
+def page_profile(tabs, sessions, regs, pays, players):
     email = signed_in_email()
     existing = players[players["player_email"].str.lower() == email]
     name_default = existing["player_name"].iloc[0] if not existing.empty else ""
@@ -330,7 +341,7 @@ def page_my_profile(tabs, sessions, regs, pays, players):
     if "profile_whatsapp" not in st.session_state: st.session_state["profile_whatsapp"] = wa_default
     if "profile_payout" not in st.session_state: st.session_state["profile_payout"] = link_default
 
-    st.subheader("My Profile")
+    st.subheader("Profile")
     with st.form("profile"):
         c1, c2 = st.columns(2)
         with c1:
@@ -368,9 +379,10 @@ st.caption("Fair splits for weekly court fees.")
 if "page" not in st.session_state:
     st.session_state["page"] = "Balances"
 
-pages = ["Balances", "Register", "Sessions", "My Profile"]
-# Build a single row: 4 nav buttons on left, status chip + logout on right
-nav_cols = st.columns([1,1,1,1, 5, 2])
+# Shorter label "Profile" and give nav much more width on the row
+pages = ["Balances", "Register", "Sessions", "Profile"]
+nav_cols = st.columns([5,5,5,5, 2, 2])   # 4 wide buttons, then small chip + logout cols
+
 for i, p in enumerate(pages):
     is_active = (st.session_state["page"] == p)
     with nav_cols[i]:
@@ -380,7 +392,10 @@ for i, p in enumerate(pages):
                 st.rerun()
 
 with nav_cols[-2]:
-    st.markdown(f"<div class='topbar' style='display:flex;justify-content:flex-end;align-items:center;height:38px'><span class='chip'>Logged in as {signed_in_email()}</span></div>", unsafe_allow_html=True)
+    st.markdown(
+        f"<div class='topbar' style='display:flex;justify-content:flex-end;align-items:center;height:38px'><span class='chip'>Logged in as {signed_in_email()}</span></div>",
+        unsafe_allow_html=True
+    )
 with nav_cols[-1]:
     if st.button("Log out", key="logout_btn", use_container_width=True):
         logout()
@@ -395,7 +410,7 @@ elif page == "Register":
 elif page == "Sessions":
     page_sessions(tabs, sessions, regs, pays, players)
 else:
-    page_my_profile(tabs, sessions, regs, pays, players)
+    page_profile(tabs, sessions, regs, pays, players)
 
 st.markdown("---")
 st.markdown("<div style='text-align:center; opacity:0.6'>Made with ❤️ for fair splits.</div>", unsafe_allow_html=True)
