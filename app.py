@@ -49,6 +49,22 @@ st.markdown(
         .stButton>button { padding:.32rem .6rem !important; font-size:.85rem !important; }
         .chip { max-width: 160px; font-size:.82rem; }
     }
+    
+    /* --- Dark mode fixes for login screen --- */
+    @media (prefers-color-scheme: dark) {
+        .login-bg {
+            background: #0b0b0c !important;
+        }
+        .login-card {
+            background: #0b0b0c !important;
+            color: #ffffff !important;
+            border-color: rgba(255,255,255,.18) !important;
+        }
+        .login-card * {
+            color: inherit !important;
+        }
+    }
+
     </style>
     ''', unsafe_allow_html=True
 )
@@ -96,7 +112,7 @@ def login_page():
     with c2:
         st.markdown(
             f"""
-            <div style='background:white; border:1px solid rgba(49,51,63,.15); border-radius:16px; padding:1.25rem 1.25rem 1rem'>
+            <div class='login-card' style='background:white; border:1px solid rgba(49,51,63,.15); border-radius:16px; padding:1.25rem 1.25rem 1rem'>
                 <div style='display:flex;align-items:center;gap:.6rem;margin-bottom:.75rem'>
                     <div style='font-size:1.75rem'>🎾</div>
                     <div>
