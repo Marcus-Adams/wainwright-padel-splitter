@@ -349,13 +349,17 @@ def page_sessions(tabs, sessions, regs, pays, players):
     st.subheader("Sessions (admin)")
     with st.form("add_session"):
         c1, c2, c3 = st.columns([1,1,2])
-        with c1: d = st.date_input("Date", value=date.today())
+        # Label explicitly indicates the desired format
+        with c1: d = st.date_input("Date (dd/mm/yyyy)", value=date.today())
         with c2: fee = st.number_input("Court fee (£)", min_value=0.0, step=1.0, format="%.2f")
         with c3: notes = st.text_input("Notes (optional)", value="")
         if st.form_submit_button("Add session", use_container_width=True):
-            sid = to_iso_date(d)
-            if not sessions[sessions["session_id"] == sid].empty: st.error("A session for this date already exists.", icon="⚠️")
-            else: append_row(tabs["sessions"], [sid, sid, fee, notes, now_iso()]); st.success("Session added.", icon="✅")
+            sid = to_iso_date(d)  # store canonical yyyy-mm-dd
+            if not sessions[sessions["session_id"] == sid].empty:
+                st.error("A session for this date already exists.", icon="⚠️")
+            else:
+                append_row(tabs["sessions"], [sid, sid, fee, notes, now_iso()])
+                st.success("Session added.", icon="✅")
     if sessions.empty: return
     st.divider(); st.subheader("Session list")
     sess = sessions.sort_values("date", ascending=False).copy()
@@ -364,9 +368,20 @@ def page_sessions(tabs, sessions, regs, pays, players):
         sid = s["session_id"]; fee = parse_float(s["fee"],0.0)
         attendees = regs[regs["session_id"] == sid]["player_email"].nunique()
         share = (fee/attendees) if attendees>0 else 0.0
-        rows.append({"Date":sid,"Fee":fee,"Attendees":attendees,"Per-person share":share,"Notes":s.get("notes","")})
+        rows.append({
+            "Session Date": fmt_uk_date(sid),
+            "Fee": fee,
+            "Attendees": attendees,
+            "Per-person share": share,
+            "Notes": s.get("notes","")
+        })
     view = pd.DataFrame(rows)
-    if not view.empty: st.dataframe(view.style.format({"Fee":"£{:.2f}","Per-person share":"£{:.2f}"}), use_container_width=True)
+    if not view.empty:
+        st.dataframe(
+            view.style.format({"Fee":"£{:.2f}","Per-person share":"£{:.2f}"}),
+            use_container_width=True,
+            hide_index=True
+        )
 
 def page_profile(tabs, sessions, regs, pays, players):
     email = signed_in_email()
