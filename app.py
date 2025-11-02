@@ -279,7 +279,7 @@ def page_balances(tabs, sessions, regs, pays, players):
 
     st.subheader("Current balances")
     st.caption("Positive means the player **owes** the payer. Negative means they have **credit**.")
-    st.dataframe(df[["Player","Email","Balance"]].style.format({"Balance":"£{:.2f}"}), use_container_width=True)
+    st.dataframe(df[["Player","Email","Balance"]].style.format({"Balance":"£{:.2f}"}), use_container_width=True, hide_index=True)
 
     me = signed_in_email(); monzo_user = payer_monzo_username(); payer = payer_email
 
@@ -308,7 +308,7 @@ def page_balances(tabs, sessions, regs, pays, players):
                     st.rerun()
 
     # --- WhatsApp settle-up ---
-    st.divider(); st.subheader("WhatsApp settle‑up")
+    st.divider(); st.subheader("WhatsApp settle‑up (admin)")
 
     # Combined settle-up text
     lines = [f"Hi all — settle‑up for {group_name()}:", ""]
