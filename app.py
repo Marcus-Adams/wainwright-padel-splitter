@@ -271,7 +271,7 @@ def page_balances(tabs, sessions, regs, pays, players):
         st.info("You're the payer. Players log their own payments; you can't log on behalf of others.", icon="ℹ️")
     else:
         my_name = names.get(me, "")
-        tabs_pay = st.tabs(["Pay manually, and log paid", "Pay by Monzo"])
+        tabs_pay = st.tabs(["Pay manually, and log paid", "Pay by Monzo"], key="pay_tabs")
 
         # Option 1: Manual + log
         with tabs_pay[0]:
