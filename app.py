@@ -152,11 +152,11 @@ def ensure_all_tabs():
 
 @st.cache_data(show_spinner=False, ttl=20)
 def fetch_all_tables_as_dfs():
-    # Use batch VALUES get via client to reduce quota usage
-    client = get_gsheet_client()
-    key = st.secrets["sheets"]["db_key"]
+    # Use low-level HttpClient to batch-get values (works across gspread versions)
+    sh = open_db()
+    http = sh.client  # this is a gspread HttpClient
     ranges = ["sessions!A1:E", "registrations!A1:D", "payments!A1:E", "players!A1:F"]
-    resp = client.values_batch_get(key, ranges)
+    resp = http.values_batch_get(sh.id, ranges)
     value_ranges = resp.get("valueRanges", [])
     while len(value_ranges) < 4:
         value_ranges.append({"values": []})
