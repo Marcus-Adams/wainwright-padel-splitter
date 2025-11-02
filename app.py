@@ -17,38 +17,12 @@ st.markdown(
         background: radial-gradient(1200px 600px at 10% -10%, #dbeafe 0%, rgba(219,234,254,0) 60%),
                     radial-gradient(800px 400px at 110% 10%, #fce7f3 0%, rgba(252,231,243,0) 60%);
         z-index: -1; }
-    /* Base buttons */
-    .stButton>button {
-        border-radius: 9999px !important;
-        padding: .45rem .9rem !important;
-        border: 1px solid rgba(49,51,63,.2);
-        background: rgba(49,51,63,.04);
-        white-space: nowrap;              /* single line */
-    }
-    /* Primary buttons (active nav) */
-    .stButton>button[kind="primary"] {
-        background: #dc2626 !important;   /* red-600 */
-        border-color: #dc2626 !important;
-        color: white !important;
-    }
-    .stButton>button[kind="primary"]:hover {
-        background: #b91c1c !important;   /* red-700 */
-        border-color: #b91c1c !important;
-        color: white !important;
-    }
-    /* Title & chip row */
-    .chip {
-        background:#eef2ff; color:#3730a3;
-        padding:.35rem .65rem; border-radius:9999px;
-        font-size:.9rem; white-space:nowrap;
-        max-width: 260px; text-overflow: ellipsis; overflow: hidden; display:inline-block;
-    }
+    .stButton>button { border-radius: 9999px !important; padding: .45rem .9rem !important; border: 1px solid rgba(49,51,63,.2); background: rgba(49,51,63,.04); white-space: nowrap; }
+    .stButton>button[kind="primary"] { background: #dc2626 !important; border-color: #dc2626 !important; color: white !important; }
+    .stButton>button[kind="primary"]:hover { background: #b91c1c !important; border-color: #b91c1c !important; color: white !important; }
+    .chip { background:#eef2ff; color:#3730a3; padding:.35rem .65rem; border-radius:9999px; font-size:.9rem; white-space:nowrap; max-width: 260px; text-overflow: ellipsis; overflow: hidden; display:inline-block; }
     .top-right { display:flex; justify-content:flex-end; align-items:flex-start; margin-top:.2rem; }
-    /* Mobile tweaks */
-    @media (max-width: 600px) {
-        .stButton>button { padding:.32rem .6rem !important; font-size:.85rem !important; }
-        .chip { max-width: 160px; font-size:.82rem; }
-    }
+    @media (max-width: 600px) { .stButton>button { padding:.32rem .6rem !important; font-size:.85rem !important; } .chip { max-width: 160px; font-size:.82rem; } }
     </style>
     ''', unsafe_allow_html=True
 )
@@ -76,7 +50,6 @@ def logout():
         del st.session_state[k]
     st.rerun()
 
-# Pretty, *separate* login screen
 def login_page():
     st.markdown('<div class="login-bg"></div>', unsafe_allow_html=True)
     st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
@@ -112,7 +85,6 @@ def login_page():
                     st.rerun()
     st.stop()
 
-# ----------------- Google Sheets client -----------------
 @st.cache_resource(show_spinner=False)
 def get_gsheet_client():
     raw = st.secrets["gcp_service_account"]
@@ -285,27 +257,53 @@ def page_balances(tabs, sessions, regs, pays, players):
     wa_text = "\n".join(lines) if len(lines) > 2 else "No one owes anything right now 🎉"
     st.text_area("Copy & paste into WhatsApp:", value=wa_text, height=200)
 
+def _derived_name_from_email(email: str) -> str:
+    local = (email or "").split("@")[0]
+    local = local.replace('.', ' ').replace('_',' ').replace('-',' ')
+    return " ".join([w.capitalize() for w in local.split() if w]) or email
+
 def page_register(tabs, sessions, regs, pays, players):
-    st.subheader("Register that you played")
+    st.subheader("Register your game sessions")
     if sessions.empty:
         st.info("No sessions yet. Ask the payer/admin to add one on the Sessions page."); return
+
     latest_first = sessions.sort_values("date", ascending=False)
     email = signed_in_email()
     existing = players[players["player_email"].str.lower() == email]
-    name_default = (existing["player_name"].iloc[0] if not existing.empty else "")
+    name_to_use = (existing["player_name"].iloc[0] if not existing.empty else _derived_name_from_email(email))
+
     sid = st.selectbox("Which session?", latest_first["session_id"].tolist(), index=0)
-    name = st.text_input("Your name", value=name_default)
-    if st.button("I played", use_container_width=True, type="primary"):
-        if not name: toast_err("Please fill in your name."); return
+
+    if st.button("I'm Playing / I Played", use_container_width=True, type="primary"):
         already = regs[(regs["session_id"] == sid) & (regs["player_email"].str.lower() == email)]
-        if not already.empty: toast_err("You're already registered for that session."); return
-        append_row(tabs["registrations"], [sid, email, name, now_iso()])
-        if existing.empty: append_row(tabs["players"], [email, name, "", "", "TRUE", now_iso()])
-        toast_ok("Registered.")
-    st.divider(); st.subheader("Who else is playing?")
-    regs_for_selected = regs[regs["session_id"] == sid]
-    st.dataframe(regs_for_selected[["player_name","player_email","registered_at"]].rename(
-        columns={"player_name":"Name","player_email":"Email","registered_at":"Registered"}), use_container_width=True)
+        if not already.empty:
+            toast_err("You're already registered for that session.")
+        else:
+            append_row(tabs["registrations"], [sid, email, name_to_use, now_iso()])
+            if existing.empty:
+                append_row(tabs["players"], [email, name_to_use, "", "", "TRUE", now_iso()])
+            toast_ok("Registered.")
+
+    st.divider(); st.subheader("Who else is playing / played?")
+    regs_for_selected = regs[regs["session_id"] == sid].copy()
+
+    # Format registered_at as dd/mmm/yyyy <space> HH:MM (drop the trailing 'Z')
+    def fmt_ts(s):
+        try:
+            ts = pd.to_datetime(s, errors="raise")
+            # turn into naive dt without timezone suffix; keep the clock time as-is
+            if hasattr(ts, "tzinfo") and ts.tzinfo is not None:
+                py = ts.to_pydatetime().replace(tzinfo=None)
+            else:
+                py = ts.to_pydatetime()
+            return py.strftime("%d/%b/%Y %H:%M")
+        except Exception:
+            return str(s).replace("T", " ").replace("Z", "")
+
+    if not regs_for_selected.empty:
+        regs_for_selected["Registered"] = regs_for_selected["registered_at"].map(fmt_ts)
+        out = regs_for_selected.rename(columns={"player_name":"Name","player_email":"Email"})
+        st.dataframe(out[["Name","Email","Registered"]], use_container_width=True)
 
 def page_sessions(tabs, sessions, regs, pays, players):
     st.subheader("Sessions (admin)")
@@ -369,11 +367,9 @@ def page_profile(tabs, sessions, regs, pays, players):
 
     st.caption("Tip: add a payment link for easy settle‑ups (Monzo, Revolut, PayPal, etc.).")
 
-# ----------------- App shell -----------------
 if not signed_in_email():
     login_page()
 
-# Header row: title on left, chip on right (top-right alignment)
 header_left, header_right = st.columns([5,2])
 with header_left:
     st.markdown(f"<h1 style='margin-bottom:0'>🎾 {group_name()}</h1>", unsafe_allow_html=True)
@@ -384,11 +380,8 @@ with header_right:
 if "page" not in st.session_state:
     st.session_state["page"] = "Balances"
 
-# 5 equal-width pills including Logout
 pages = ["Balances", "Register", "Sessions", "Profile"]
 nav_cols = st.columns([1,1,1,1,1])
-
-# Left 4: pages
 for i, p in enumerate(pages):
     is_active = (st.session_state["page"] == p)
     with nav_cols[i]:
@@ -397,7 +390,6 @@ for i, p in enumerate(pages):
                 st.session_state["page"] = p
                 st.rerun()
 
-# Rightmost: Logout pill (styled like others, not a page)
 with nav_cols[-1]:
     if st.button("Log out", key="logout_btn", use_container_width=True, type="secondary"):
         logout()
