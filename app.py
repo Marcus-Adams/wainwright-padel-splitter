@@ -101,8 +101,7 @@ def login_page():
             join_code = st.text_input("Group passcode", type="password")
             submitted = st.form_submit_button("Log in", use_container_width=True, type="primary")
             if submitted:
-                st.session_state["meta_settings"] = read_meta_dict_cached()
-                    code = (get_meta("join_code", "") or st.secrets.get("auth", {}).get("join_code", "")).strip()
+                st.session_state["meta_settings"] = read_meta_dict_cached(); code = (get_meta("join_code", "") or st.secrets.get("auth", {}).get("join_code", "")).strip()
                 if not email:
                     st.error("Email is required.", icon="⚠️")
                 elif code and join_code != code:
