@@ -7,72 +7,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 from urllib.parse import quote
 
-
-# --- Generate a padel favicon (PNG) for the browser tab ---
-def _ensure_padel_favicon_png():
-    try:
-        from PIL import Image, ImageDraw
-        import os
-        out_path = "/tmp/padel_favicon.png"
-        if os.path.exists(out_path):
-            return out_path
-        size = 256
-        # Transparent canvas
-        base = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-        # Build an alpha mask: 255 opaque, 0 transparent
-        mask = Image.new("L", (size, size), 0)
-        md = ImageDraw.Draw(mask)
-        # Racket head (round)
-        cx, cy, r = 120, 110, 80
-        md.ellipse((cx-r, cy-r, cx+r, cy+r), fill=255)
-        # Handle (simple slanted quad)
-        handle = [(180, 160), (242, 222), (224, 240), (162, 178)]
-        md.polygon(handle, fill=255)
-        # Padel "holes" (make them transparent in the head)
-        holes = []
-        for row in range(3):
-            for col in range(4):
-                hx = cx - 45 + col * 30
-                hy = cy - 35 + row * 30
-                holes.append((hx, hy))
-        for (hx, hy) in holes:
-            md.ellipse((hx-6, hy-6, hx+6, hy+6), fill=0)
-        # Compose solid colour with mask (currentColor-ish dark neutral)
-        fg = Image.new("RGBA", (size, size), (17, 17, 17, 255))
-        icon = Image.composite(fg, Image.new("RGBA", (size, size), (0, 0, 0, 0)), mask)
-        icon.save(out_path, format="PNG")
-        return out_path
-    except Exception:
-        # Fall back to emoji if Pillow isn't available
-        return None
-
-_padel_favicon_path = _ensure_padel_favicon_png()
-
-
-# --- Inline SVG padel icon (no external fonts needed) ---
-def app_icon_svg(size: str = "1.6rem", color: str = "currentColor") -> str:
-    """Return an inline SVG padel icon."""
-    return f"""
-    <svg width="{size}" height="{size}" viewBox="0 0 24 24" fill="none"
-         xmlns="http://www.w3.org/2000/svg"
-         style="display:inline-block;vertical-align:-3px">
-      <!-- Racket head -->
-      <circle cx="10.5" cy="9.5" r="6.5" stroke="{color}" stroke-width="1.8" fill="none"/>
-      <!-- Handle -->
-      <path d="M15 14 L21 20 L19.5 21.5 L13.5 15.5 Z" fill="{color}"/>
-      <!-- Dimples -->
-      <circle cx="8.3" cy="7.5" r="0.7" fill="{color}"/>
-      <circle cx="10.5" cy="7.0" r="0.7" fill="{color}"/>
-      <circle cx="12.7" cy="7.5" r="0.7" fill="{color}"/>
-      <circle cx="8.3" cy="9.5" r="0.7" fill="{color}"/>
-      <circle cx="10.5" cy="9.5" r="0.7" fill="{color}"/>
-      <circle cx="12.7" cy="9.5" r="0.7" fill="{color}"/>
-      <circle cx="9.4" cy="11.3" r="0.7" fill="{color}"/>
-      <circle cx="11.6" cy="11.3" r="0.7" fill="{color}"/>
-    </svg>
-    """
-
-st.set_page_config(page_title="Padel Splitter", page_icon=_padel_favicon_path, layout="wide")
+st.set_page_config(page_title="Padel Splitter", page_icon="🎾", layout="wide")
 
 # ----------------- Global styling -----------------
 st.markdown(
@@ -114,19 +49,6 @@ st.markdown(
         .stButton>button { padding:.32rem .6rem !important; font-size:.85rem !important; }
         .chip { max-width: 160px; font-size:.82rem; }
     }
-    
-/* Material Symbols Outlined for the Padel icon */
-
-.material-symbols-outlined { /* unused now */
-  font-family: 'Material Symbols Outlined';
-  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
-  font-weight: normal;
-  font-style: normal;
-  line-height: 1;
-  display: inline-block;
-  vertical-align: -3px;
-}
-
     </style>
     ''', unsafe_allow_html=True
 )
@@ -176,7 +98,7 @@ def login_page():
             f"""
             <div style='background:white; border:1px solid rgba(49,51,63,.15); border-radius:16px; padding:1.25rem 1.25rem 1rem'>
                 <div style='display:flex;align-items:center;gap:.6rem;margin-bottom:.75rem'>
-                    {app_icon_svg()}
+                    <div style='font-size:1.75rem'>🎾</div>
                     <div>
                       <div style='font-size:1.05rem;opacity:.7'>Padel Splitter</div>
                       <div style='font-size:1.35rem;font-weight:700'>{gn}</div>
@@ -649,7 +571,7 @@ if not signed_in_email():
 # Header row: title on left, chip on right (top-right alignment)
 header_left, header_right = st.columns([5,2])
 with header_left:
-    st.markdown(f"<h1 style='margin-bottom:0'>{app_icon_svg('1.25rem')} {group_name()}</h1>", unsafe_allow_html=True)
+    st.markdown(f"<h1 style='margin-bottom:0'>🎾 {group_name()}</h1>", unsafe_allow_html=True)
     st.caption("Fair splits for weekly court fees.")
 with header_right:
     st.markdown(f"<div class='top-right'><span class='chip'>Logged in as {signed_in_email()}</span></div>", unsafe_allow_html=True)
