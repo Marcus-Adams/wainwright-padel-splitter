@@ -5,7 +5,7 @@ from datetime import datetime, date
 import json, re
 import gspread
 from google.oauth2.service_account import Credentials
-from urllib.parse import quote, urlparse
+from urllib.parse import quote, urlparse, urlunparse
 
 st.set_page_config(page_title="Padel Splitter", page_icon="🎾", layout="wide")
 
@@ -184,32 +184,7 @@ def append_row(ws, row):
     ws.append_row(row, value_input_option="USER_ENTERED")
     st.cache_data.clear()
 
-def update_player_row(ws, rownum: int, name: str, whatsapp: str, payout_link: str):
-    ws.update(f"B{rownum}:E{rownum}", [[name, whatsapp, payout_link, "TRUE"]])
-    st.cache_data.clear()
-
-# ----------------- Domain logic -----------------
-def compute_balances(sessions_df, regs_df, payments_df, payer_email):
-    balances = {}
-    emails = set(regs_df["player_email"].dropna().tolist()) | set(payments_df["player_email"].dropna().tolist())
-    emails.add(payer_email)
-    for e in emails: balances[e] = 0.0
-    for _, s in sessions_df.iterrows():
-        sid = s.get("session_id") or s.get("date")
-        fee = parse_float(s.get("fee", 0.0))
-        attendees = regs_df[regs_df["session_id"] == sid]["player_email"].dropna().unique().tolist()
-        n = len(attendees)
-        if n<=0 or fee<=0: continue
-        share = fee/n
-        for e in attendees: balances[e] = balances.get(e,0.0)+share
-    for _, p in payments_df.iterrows():
-        e = p.get("player_email"); amt = parse_float(p.get("amount",0.0))
-        if not e or amt<=0: continue
-        balances[e] = balances.get(e,0.0)-amt
-    non_payer_total = sum(v for k,v in balances.items() if k!=payer_email)
-    balances[payer_email] = -non_payer_total
-    return balances
-
+# ----------------- Payments & links helpers -----------------
 def normalise_monzo_username(raw):
     if not raw: return None
     s = str(raw).strip()
@@ -224,6 +199,42 @@ def normalise_monzo_username(raw):
         if parts: s = parts[-1]
     if s.startswith("@"): s = s[1:]
     return s
+
+def normalise_generic_link(url: str | None) -> str | None:
+    """Force absolute https links and tidy common providers (PayPal/Revolut)."""
+    if not url: return None
+    s = str(url).strip().strip('"').strip("'")
+    if not s: return None
+    # If scheme missing, add https://
+    if not re.match(r'^[a-zA-Z][a-zA-Z0-9+\-.]*://', s):
+        s = "https://" + s.lstrip('/')
+    p = urlparse(s)
+    host = (p.netloc or "").lower()
+    path = p.path or "/"
+    # PayPal canonical
+    if "paypal.me" in host or "paypal.me" in path:
+        user = path.strip("/").split("/",1)[0]
+        if user:
+            return f"https://paypal.me/{user}"
+        return "https://paypal.me"
+    # Revolut canonical
+    if "revolut.me" in host or "revolut.me" in path:
+        user = path.strip("/").split("/",1)[0]
+        if user:
+            return f"https://revolut.me/{user}"
+        return "https://revolut.me"
+    # Otherwise, return normalised scheme+host+path
+    norm = urlunparse(("https", host or p.path.split('/')[0], ("/" + "/".join(p.path.split('/')[1:])).rstrip('/') or "/", "", "", ""))
+    return norm
+
+def provider_label_from_url(url: str) -> str:
+    s = (url or "").lower()
+    host = urlparse(url).netloc.lower() if re.match(r'^[a-z][a-z0-9+\-.]*://', url) else s
+    if "paypal" in host: return "Pay with PayPal"
+    if "revolut" in host: return "Pay with Revolut"
+    if "wise" in host: return "Pay with Wise"
+    if "cash.app" in host or "cashapp" in host: return "Pay with Cash App"
+    return "Open payer’s payment link"
 
 def payer_monzo_username():
     raw = st.secrets.get("payments", {}).get("monzo_username")
@@ -248,28 +259,31 @@ def get_payer_generic_link(players_df, payer_email):
         row = players_df[players_df["player_email"].str.lower() == payer_email.lower()]
         if row.empty: return None
         link = str(row["payout_link"].iloc[0] or "").strip()
-        return link or None
+        return normalise_generic_link(link)
     except Exception:
         return None
 
-def provider_label_from_url(url: str) -> str:
-    try:
-        host = urlparse(url).netloc.lower()
-    except Exception:
-        host = ""
-    if "paypal" in host: return "Pay with PayPal"
-    if "revolut" in host: return "Pay with Revolut"
-    if "wise" in host: return "Pay with Wise"
-    if "cash.app" in host or "cashapp" in host: return "Pay with Cash App"
-    return "Open payer’s payment link"
-
-def load_all():
-    tabs = ensure_all_tabs()
-    sessions, regs, pays, players = fetch_all_tables_as_dfs()
-    return tabs, sessions, regs, pays, players
-
-def toast_ok(msg): st.success(msg, icon="✅")
-def toast_err(msg): st.error(msg, icon="⚠️")
+# ----------------- Domain logic -----------------
+def compute_balances(sessions_df, regs_df, payments_df, payer_email):
+    balances = {}
+    emails = set(regs_df["player_email"].dropna().tolist()) | set(payments_df["player_email"].dropna().tolist())
+    emails.add(payer_email)
+    for e in emails: balances[e] = 0.0
+    for _, s in sessions_df.iterrows():
+        sid = s.get("session_id") or s.get("date")
+        fee = parse_float(s.get("fee", 0.0))
+        attendees = regs_df[regs_df["session_id"] == sid]["player_email"].dropna().unique().tolist()
+        n = len(attendees)
+        if n<=0 or fee<=0: continue
+        share = fee/n
+        for e in attendees: balances[e] = balances.get(e,0.0)+share
+    for _, p in payments_df.iterrows():
+        e = p.get("player_email"); amt = parse_float(p.get("amount",0.0))
+        if not e or amt<=0: continue
+        balances[e] = balances.get(e,0.0)-amt
+    non_payer_total = sum(v for k,v in balances.items() if k!=payer_email)
+    balances[payer_email] = -non_payer_total
+    return balances
 
 # Helper: UK date from sid like 'YYYY-MM-DD'
 def fmt_uk_date(s: str) -> str:
@@ -279,10 +293,15 @@ def fmt_uk_date(s: str) -> str:
     except Exception:
         return str(s)
 
+def _derived_name_from_email(email: str) -> str:
+    local = (email or "").split("@")[0]
+    local = local.replace('.', ' ').replace('_',' ').replace('-',' ')
+    return " ".join([w.capitalize() for w in local.split() if w]) or email
+
 # ----------------- Pages -----------------
 def page_balances(tabs, sessions, regs, pays, players):
-    if st.session_state.get("flash_msg"):
-        toast_ok(st.session_state.pop("flash_msg"))
+    # flash
+    if st.session_state.get("flash_msg"): st.success(st.session_state.pop("flash_msg"), icon="✅")
 
     payer_email = st.secrets["sheets"].get("payer_email", "").strip()
     if not payer_email:
@@ -290,7 +309,7 @@ def page_balances(tabs, sessions, regs, pays, players):
     balances = compute_balances(sessions, regs, pays, payer_email)
 
     names = {r["player_email"]: r["player_name"] for _, r in players.iterrows() if r.get("player_email")}
-    wa_map = {r["player_email"]: r.get("whatsapp","") for _, r in players.iterrows() if r.get("player_email")}
+    players_wa_map = {r["player_email"]: r.get("whatsapp","") for _, r in players.iterrows() if r.get("player_email")}
 
     entries = [{"Player": names.get(e, e), "Email": e, "Balance": round(float(amt),2)} for e,amt in balances.items()]
     df = pd.DataFrame(entries).sort_values(by="Balance", ascending=False).reset_index(drop=True)
@@ -299,12 +318,13 @@ def page_balances(tabs, sessions, regs, pays, players):
     st.caption("Positive means the player **owes** the payer. Negative means they have **credit**.")
     st.dataframe(df[["Player","Email","Balance"]].style.format({"Balance":"£{:.2f}"}), use_container_width=True, hide_index=True)
 
-    me = signed_in_email(); monzo_user = payer_monzo_username(); payer = payer_email
+    me = signed_in_email()
+    monzo_user = payer_monzo_username()
     payer_generic_link = get_payer_generic_link(players, payer_email)
 
     # --- Log payment (self only) ---
     st.divider(); st.subheader("Log a payment (you only)")
-    if me == payer:
+    if me == payer_email:
         st.info("You're the payer. Players log their own payments; you can't log on behalf of others.", icon="ℹ️")
     else:
         my_name = names.get(me, "")
@@ -322,8 +342,8 @@ def page_balances(tabs, sessions, regs, pays, players):
                     amount = st.number_input("Amount (£)", min_value=0.0, step=1.0, format="%.2f", key="amt_manual")
                     paid_at = st.date_input("Paid on", value=date.today(), key="date_manual")
                 if st.form_submit_button("Log paid", use_container_width=True):
-                    if not name: toast_err("Name is required.")
-                    elif amount <= 0: toast_err("Amount must be greater than zero.")
+                    if not name: st.error("Name is required.", icon="⚠️")
+                    elif amount <= 0: st.error("Amount must be greater than zero.", icon="⚠️")
                     else:
                         append_row(tabs["payments"], [me, name, amount, to_iso_date(paid_at), note])
                         st.session_state["flash_msg"] = "Payment recorded and balances updated."
@@ -341,40 +361,29 @@ def page_balances(tabs, sessions, regs, pays, players):
                 amount2 = st.number_input("Amount (£)", min_value=0.0, step=1.0, format="%.2f", key="amt_link")
                 paid_at2 = st.date_input("Paid on", value=date.today(), key="date_link")
 
-            # Buttons row (Monzo + alternate if present)
             bcol1, bcol2, bcol3 = st.columns([1,1,1.2])
-
             if monzo_user and amount2 > 0:
                 monzo_url = monzo_request_link(monzo_user, amount2, f"Padel {group_name()}")
                 with bcol1:
-                    try:
-                        st.link_button("Pay with Monzo", monzo_url, use_container_width=True, type="secondary")
-                    except Exception:
-                        st.markdown(f"[Pay with Monzo]({monzo_url})")
+                    try: st.link_button("Pay with Monzo", monzo_url, use_container_width=True, type="secondary")
+                    except Exception: st.markdown(f"[Pay with Monzo]({monzo_url})")
             elif monzo_user:
-                with bcol1:
-                    st.info("Enter an amount to enable Monzo link.", icon="ℹ️")
+                with bcol1: st.info("Enter an amount to enable Monzo link.", icon="ℹ️")
 
             if payer_generic_link:
                 alt_label = provider_label_from_url(payer_generic_link)
                 with bcol2:
-                    try:
-                        st.link_button(alt_label, payer_generic_link, use_container_width=True, type="secondary")
-                    except Exception:
-                        st.markdown(f"[{alt_label}]({payer_generic_link})")
+                    try: st.link_button(alt_label, payer_generic_link, use_container_width=True, type="secondary")
+                    except Exception: st.markdown(f"[{alt_label}]({payer_generic_link})")
 
-            # Copy helpers
             with bcol3:
                 st.caption("Copy helpers")
-                st.code(f"{currency(amount2)}", language=None)  # includes copy icon
-                st.code(f"Padel {group_name()}", language=None)
+                st.code(f"{currency(amount2)}")  # copy icon
+                st.code(f"Padel {group_name()}")
 
-            # Confirm + log
             if st.button("I've paid — Log it", use_container_width=True, type="primary"):
-                if not name2:
-                    toast_err("Name is required.")
-                elif amount2 <= 0:
-                    toast_err("Amount must be greater than zero.")
+                if not name2: st.error("Name is required.", icon="⚠️")
+                elif amount2 <= 0: st.error("Amount must be greater than zero.", icon="⚠️")
                 else:
                     append_row(tabs["payments"], [me, name2, amount2, to_iso_date(paid_at2), note2])
                     st.session_state["flash_msg"] = "Payment recorded and balances updated."
@@ -382,9 +391,9 @@ def page_balances(tabs, sessions, regs, pays, players):
 
     # --- WhatsApp settle-up ---
     st.divider(); st.subheader("WhatsApp settle‑up (admin)")
-
-    # Combined settle-up text
     lines = [f"Hi all — settle‑up for {group_name()}:", ""]
+    if monzo_user is None and payer_generic_link is None:
+        lines.append("(No payment link configured — please pay the payer.)")
     for _, row in df.iterrows():
         if row["Email"] == payer_email: continue
         if row["Balance"] > 0.0:
@@ -393,57 +402,34 @@ def page_balances(tabs, sessions, regs, pays, players):
                 part += f" → {monzo_request_link(monzo_user, row['Balance'], f'Padel {group_name()}')}"
             lines.append(part)
     wa_text = "\n".join(lines) if len(lines) > 2 else "No one owes anything right now 🎉"
-
-    # Option A — share composer
     st.caption("Option A — open the WhatsApp share composer and pick recipients:")
     share_url = f"https://wa.me/?text={quote(wa_text)}"
-    try:
-        st.link_button("Open WhatsApp", share_url, use_container_width=True)
-    except Exception:
-        st.markdown(f"[Open WhatsApp]({share_url})")
+    try: st.link_button("Open WhatsApp", share_url, use_container_width=True)
+    except Exception: st.markdown(f"[Open WhatsApp]({share_url})")
 
-    # Option B — individual chats
     owe_df = df[(df["Balance"] > 0) & (df["Email"] != payer_email)].copy()
-    wa_map = {r["Email"]: wa_map.get(r["Email"], "") for _, r in owe_df.iterrows()}  # reuse earlier map
-    owe_df["WhatsApp"] = owe_df["Email"].map(wa_map).fillna("")
+    owe_df["WhatsApp"] = owe_df["Email"].map(players_wa_map).fillna("")
     owe_df["wa_clean"] = owe_df["WhatsApp"].map(wa_sanitise_number)
 
     st.caption("Option B — open individual chats (only for players with WhatsApp numbers):")
-    options = []
-    for _, r in owe_df.iterrows():
-        if r["wa_clean"]:
-            options.append(f"{r['Player']}  (+{r['wa_clean']})")
-
+    options = [f"{r['Player']}  (+{r['wa_clean']})" for _, r in owe_df.iterrows() if r["wa_clean"]]
     if options:
         selected = st.multiselect("Select players", options, help="We’ll open one chat per selected player with their own amount.")
         display_map = {f"{r['Player']}  (+{r['wa_clean']})": r for _, r in owe_df.iterrows() if r["wa_clean"]}
         cols = st.columns(2)
-        i = 0
-        for disp in selected:
+        for i, disp in enumerate(selected):
             r = display_map[disp]
-            num = r["wa_clean"]
-            person = r["Player"]
-            amt = r["Balance"]
-            base = f"Hi {person} — please settle {currency(amt)} for {group_name()}"
+            base = f"Hi {r['Player']} — please settle {currency(r['Balance'])} for {group_name()}"
             if monzo_user:
-                link = monzo_request_link(monzo_user, amt, f"Padel {group_name()}")
-                base += f" → {link}"
-            url = f"https://wa.me/{num}?text={quote(base)}"
+                base += f" → {monzo_request_link(monzo_user, r['Balance'], f'Padel {group_name()}')}"
+            url = f"https://wa.me/{r['wa_clean']}?text={quote(base)}"
             with cols[i % 2]:
-                try:
-                    st.link_button(f"Open chat with {person}", url, use_container_width=True)
-                except Exception:
-                    st.markdown(f"[Open chat with {person}]({url})")
-            i += 1
+                try: st.link_button(f"Open chat with {r['Player']}", url, use_container_width=True)
+                except Exception: st.markdown(f"[Open chat with {r['Player']}]({url})")
     else:
         st.info("No selected players have WhatsApp numbers saved. Ask players to add their number on **Profile**.", icon="ℹ️")
 
     st.caption("On desktop this opens WhatsApp Web; on mobile it opens the WhatsApp app.")
-
-def _derived_name_from_email(email: str) -> str:
-    local = (email or "").split("@")[0]
-    local = local.replace('.', ' ').replace('_',' ').replace('-',' ')
-    return " ".join([w.capitalize() for w in local.split() if w]) or email
 
 def page_register(tabs, sessions, regs, pays, players):
     st.subheader("Register your game sessions")
@@ -455,13 +441,14 @@ def page_register(tabs, sessions, regs, pays, players):
     existing = players[players["player_email"].str.lower() == email]
     name_to_use = (existing["player_name"].iloc[0] if not existing.empty else _derived_name_from_email(email))
 
+    # Session dropdown formatted as dd/mm/yyyy, but values are session_ids
     options = latest_first["session_id"].tolist()
     sid = st.selectbox("Which session?", options, index=0, format_func=fmt_uk_date)
 
     if st.button("I'm Playing / I Played", use_container_width=True, type="primary"):
         already = regs[(regs["session_id"] == sid) & (regs["player_email"].str.lower() == email)]
         if not already.empty:
-            toast_err("You're already registered for that session.")
+            st.error("You're already registered for that session.", icon="⚠️")
         else:
             append_row(tabs["registrations"], [sid, email, name_to_use, now_iso()])
             if existing.empty:
@@ -472,6 +459,7 @@ def page_register(tabs, sessions, regs, pays, players):
     st.divider(); st.subheader("Who else is playing / played?")
     regs_for_selected = regs[regs["session_id"] == sid].copy()
 
+    # Registered column: dd/mm/yyyy HH:MM (drop any trailing Z)
     def fmt_ts_ddmm(s):
         try:
             ts = pd.to_datetime(s, errors="raise")
@@ -497,7 +485,7 @@ def page_sessions(tabs, sessions, regs, pays, players):
         with c2: fee = st.number_input("Court fee (£)", min_value=0.0, step=1.0, format="%.2f")
         with c3: notes = st.text_input("Notes (optional)", value="")
         if st.form_submit_button("Add session", use_container_width=True):
-            sid = to_iso_date(d)
+            sid = to_iso_date(d)  # store canonical yyyy-mm-dd
             if not sessions[sessions["session_id"] == sid].empty:
                 st.error("A session for this date already exists.", icon="⚠️")
             else:
@@ -517,15 +505,11 @@ def page_sessions(tabs, sessions, regs, pays, players):
             "Fee": fee,
             "Attendees": attendees,
             "Per-person share": share,
-            "Notes": s.get("notes","")
+            "Notes": s.get("notes",""),
         })
     view = pd.DataFrame(rows)
     if not view.empty:
-        st.dataframe(
-            view.style.format({"Fee":"£{:.2f}","Per-person share":"£{:.2f}"}),
-            use_container_width=True,
-            hide_index=True
-        )
+        st.dataframe(view.style.format({"Fee":"£{:.2f}","Per-person share":"£{:.2f}"}), use_container_width=True, hide_index=True)
 
 def page_profile(tabs, sessions, regs, pays, players):
     email = signed_in_email()
@@ -582,9 +566,11 @@ with header_right:
 if "page" not in st.session_state:
     st.session_state["page"] = "Balances"
 
+# 5 equal-width pills including Logout
 pages = ["Balances", "Register", "Sessions", "Profile"]
 nav_cols = st.columns([1,1,1,1,1])
 
+# Left 4: pages
 for i, p in enumerate(pages):
     is_active = (st.session_state["page"] == p)
     with nav_cols[i]:
@@ -593,11 +579,13 @@ for i, p in enumerate(pages):
                 st.session_state["page"] = p
                 st.rerun()
 
+# Rightmost: Logout pill (styled like others, not a page)
 with nav_cols[-1]:
     if st.button("Log out", key="logout_btn", use_container_width=True, type="secondary"):
         logout()
 
-tabs, sessions, regs, pays, players = load_all()
+tabs = ensure_all_tabs()
+sessions, regs, pays, players = fetch_all_tables_as_dfs()
 
 page = st.session_state["page"]
 if page == "Balances":
