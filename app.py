@@ -77,7 +77,19 @@ def logout():
     st.rerun()
 
 # Pretty, *separate* login screen
+
 def login_page():
+    # Always read meta directly (no cache) for the login card
+    try:
+        meta_now = read_meta_dict_direct()
+    except Exception:
+        meta_now = {}
+
+    gn_raw = str(meta_now.get("group_name", "") or "").strip()
+    gn = gn_raw if gn_raw else "Set `group_name` in the Sheet → meta!"
+    # Update session for consistency elsewhere
+    st.session_state["meta_settings"] = meta_now
+
     st.markdown('<div class="login-bg"></div>', unsafe_allow_html=True)
     st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
     _, c2, _ = st.columns([1,2,1])
@@ -89,7 +101,7 @@ def login_page():
                     <div style='font-size:1.75rem'>🎾</div>
                     <div>
                       <div style='font-size:1.05rem;opacity:.7'>Padel Splitter</div>
-                      <div style='font-size:1.35rem;font-weight:700'>{group_name()}</div>
+                      <div style='font-size:1.35rem;font-weight:700'>{gn}</div>
                     </div>
                 </div>
                 <div style='opacity:.8;margin-bottom:.75rem'>Sign in to continue. Use your email and the group passcode.</div>
@@ -101,7 +113,8 @@ def login_page():
             join_code = st.text_input("Group passcode", type="password")
             submitted = st.form_submit_button("Log in", use_container_width=True, type="primary")
             if submitted:
-                st.session_state["meta_settings"] = read_meta_dict_cached(); code = (get_meta("join_code", "") or st.secrets.get("auth", {}).get("join_code", "")).strip()
+                # Validate against meta join_code (fallback to secrets only if meta missing)
+                code = (meta_now.get("join_code", "") or st.secrets.get("auth", {}).get("join_code", "")).strip()
                 if not email:
                     st.error("Email is required.", icon="⚠️")
                 elif code and join_code != code:
