@@ -369,7 +369,7 @@ def page_balances(tabs, sessions, regs, pays, players):
                     lines_sel.append(f"- {p}: {currency(amt)}")
             msg = "\n".join(lines_sel)
             share_url_sel = f"https://wa.me/?text={quote(msg)}"
-            try: st.link_button("Open WhatsApp (group message)", share_url_sel, use_container_width=True, type="primary")
+            try: st.link_button("Open WhatsApp (group message)", share_url_sel, use_container_width=True)
             except Exception: st.markdown(f"[Open WhatsApp (group message)]({share_url_sel})")
         else:
             st.info("Select at least one player to generate a combined message.", icon="ℹ️")
