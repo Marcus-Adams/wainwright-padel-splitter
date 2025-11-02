@@ -243,6 +243,27 @@ def read_meta_dict_cached():
     except Exception:
         return {}
 
+
+def read_meta_dict_direct():
+    """Fetch meta directly from Google Sheets (no cache), used for login screen."""
+    try:
+        sh = open_db()
+        try:
+            ws = sh.worksheet("meta")
+        except Exception:
+            return {}
+        rows = ws.get_all_records()
+        meta = {}
+        for r in rows:
+            k = str(r.get("key","")).strip()
+            v = str(r.get("value","")).strip()
+            if k:
+                meta[k] = v
+        return meta
+    except Exception:
+        return {}
+
+
 def group_name():
     return get_meta("group_name") or st.secrets.get("sheets", {}).get("group_name", "Wainwright Paddle Team")
 
