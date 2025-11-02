@@ -332,43 +332,45 @@ def page_balances(tabs, sessions, regs, pays, players):
                 part += f" → {monzo_request_link(monzo_user, row['Balance'], f'Padel {group_name()}')}"
             lines.append(part)
     wa_text = "\n".join(lines) if len(lines) > 2 else "No one owes anything right now 🎉"
-    st.caption("Option A — open the WhatsApp share composer and pick recipients:")
+    st.caption("Option A — share to **your group chat** via WhatsApp composer:")
+    st.caption(f"Pick your WhatsApp group (e.g. “{group_name()}”) after tapping the button.")
     share_url = f"https://wa.me/?text={quote(wa_text)}"
-    try: st.link_button("Open WhatsApp", share_url, use_container_width=True)
-    except Exception: st.markdown(f"[Open WhatsApp]({share_url})")
+    try: st.link_button("Open WhatsApp (compose for group)", share_url, use_container_width=True)
+    except Exception: st.markdown(f"[Open WhatsApp (compose for group)]({share_url})")
 
+    # --- Option B: Combined message (selected players) for posting into the group ---
     owe_df = df[(df["Balance"] > 0) & (df["Email"] != payer_email)].copy()
     owe_df["WhatsApp"] = owe_df["Email"].map(players_wa_map).fillna("")
     owe_df["wa_clean"] = owe_df["WhatsApp"].map(lambda s: re.sub(r'\D', '', s or ''))
 
-    st.caption("Option B — open individual chats (only for players with WhatsApp numbers):")
+    st.caption("Option B — build a **combined message** for the group from selected players:")
     options = []
     for _, r in owe_df.iterrows():
-        digits = r["wa_clean"]
-        if digits.startswith("00"): digits = digits[2:]
-        if digits.startswith("0") and len(digits)==11: digits = "44" + digits[1:]
-        if digits.startswith("7") and len(digits)==10: digits = "44" + digits
-        if digits:
-            options.append((r["Player"], digits, r["Balance"]))
+        # Having numbers is optional here; you’re posting to a group, not individuals.
+        options.append((r["Player"], r["Balance"]))
 
     if options:
-        names = [f"{p} (+{n})" for p,n,_ in options]
-        selected = st.multiselect("Select players", names, help="We’ll open one chat per selected player with their own amount.")
-        sel_map = {f"{p} (+{n})": (p,n,amt) for p,n,amt in options}
-        cols = st.columns(2)
-        i = 0
-        for disp in selected:
-            p, num, amt = sel_map[disp]
-            base = f"Hi {p} — please settle {currency(amt)} for {group_name()}"
-            if monzo_user:
-                base += f" → {monzo_request_link(monzo_user, amt, f'Padel {group_name()}')}"
-            url = f"https://wa.me/{num}?text={quote(base)}"
-            with cols[i % 2]:
-                try: st.link_button(f"Open chat with {p}", url, use_container_width=True)
-                except Exception: st.markdown(f"[Open chat with {p}]({url})")
-            i += 1
+        display = [f"{p} — {currency(amt)}" for p,amt in options]
+        selected = st.multiselect("Include players", display, default=display)
+        if selected:
+            lookup = {f"{p} — {currency(amt)}": (p,amt) for p,amt in options}
+            lines_sel = [f"Hi all — settle‑up for {group_name()}:", ""]
+            for disp in selected:
+                p, amt = lookup[disp]
+                if monzo_user:
+                    lines_sel.append(f"- {p}: {currency(amt)} → {monzo_request_link(monzo_user, amt, f'Padel {group_name()}')}")
+                else:
+                    lines_sel.append(f"- {p}: {currency(amt)}")
+            msg = "\n".join(lines_sel)
+            share_url_sel = f"https://wa.me/?text={quote(msg)}"
+            try: st.link_button("Open WhatsApp (group message)", share_url_sel, use_container_width=True, type="primary")
+            except Exception: st.markdown(f"[Open WhatsApp (group message)]({share_url_sel})")
+            st.caption("Tip: or copy the message below and paste into your group chat:")
+            st.code(msg)
+        else:
+            st.info("Select at least one player to generate a combined message.", icon="ℹ️")
     else:
-        st.info("No selected players have WhatsApp numbers saved. Ask players to add their number on **Profile**.", icon="ℹ️")
+        st.info("No outstanding balances to message about.", icon="ℹ️")
 
     st.caption("On desktop this opens WhatsApp Web; on mobile it opens the WhatsApp app.")
 
