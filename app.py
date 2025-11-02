@@ -108,7 +108,7 @@ def login_page():
                     st.error("Passcode is incorrect.", icon="⚠️")
                 else:
                     st.session_state["email"] = email.strip().lower()
-                    st.success("Signed in.", icon="✅")
+                    st.session_state["flash_msg"] = "Signed in."
                     st.rerun()
     st.stop()
 
@@ -262,6 +262,10 @@ def fmt_uk_date(s: str) -> str:
 
 # ----------------- Pages -----------------
 def page_balances(tabs, sessions, regs, pays, players):
+    # Show any flash messages from previous actions
+    if st.session_state.get("flash_msg"):
+        toast_ok(st.session_state.pop("flash_msg"))
+
     payer_email = st.secrets["sheets"].get("payer_email", "").strip()
     if not payer_email:
         st.warning("Set **payer_email** in Streamlit secrets.", icon="⚙️"); return
@@ -299,7 +303,9 @@ def page_balances(tabs, sessions, regs, pays, players):
                 elif amount <= 0: toast_err("Amount must be greater than zero.")
                 else:
                     append_row(tabs["payments"], [me, name, amount, to_iso_date(paid_at), note])
-                    toast_ok("Payment recorded.")
+                    # Immediately refresh page so the balances table above reflects the change
+                    st.session_state["flash_msg"] = "Payment recorded and balances updated."
+                    st.rerun()
 
     # --- WhatsApp settle-up ---
     st.divider(); st.subheader("WhatsApp settle‑up")
@@ -390,7 +396,8 @@ def page_register(tabs, sessions, regs, pays, players):
             append_row(tabs["registrations"], [sid, email, name_to_use, now_iso()])
             if existing.empty:
                 append_row(tabs["players"], [email, name_to_use, "", "", "TRUE", now_iso()])
-            toast_ok("Registered.")
+            st.session_state["flash_msg"] = "Registered."
+            st.rerun()
 
     st.divider(); st.subheader("Who else is playing / played?")
     regs_for_selected = regs[regs["session_id"] == sid].copy()
@@ -417,7 +424,6 @@ def page_sessions(tabs, sessions, regs, pays, players):
     st.subheader("Sessions (admin)")
     with st.form("add_session"):
         c1, c2, c3 = st.columns([1,1,2])
-        # Label explicitly indicates the desired format
         with c1: d = st.date_input("Date (dd/mm/yyyy)", value=date.today())
         with c2: fee = st.number_input("Court fee (£)", min_value=0.0, step=1.0, format="%.2f")
         with c3: notes = st.text_input("Notes (optional)", value="")
@@ -427,7 +433,8 @@ def page_sessions(tabs, sessions, regs, pays, players):
                 st.error("A session for this date already exists.", icon="⚠️")
             else:
                 append_row(tabs["sessions"], [sid, sid, fee, notes, now_iso()])
-                st.success("Session added.", icon="✅")
+                st.session_state["flash_msg"] = "Session added."
+                st.rerun()
     if sessions.empty: return
     st.divider(); st.subheader("Session list")
     sess = sessions.sort_values("date", ascending=False).copy()
@@ -486,7 +493,8 @@ def page_profile(tabs, sessions, regs, pays, players):
                 else:
                     ws.append_row([email, name, whatsapp, payout_link, "TRUE", now_iso()], value_input_option="USER_ENTERED")
                     st.cache_data.clear()
-                st.success("Profile saved.", icon="✅")
+                st.session_state["flash_msg"] = "Profile saved."
+                st.rerun()
 
     st.caption("Tip: add a payment link for easy settle‑ups (Monzo, Revolut, PayPal, etc.).")
 
