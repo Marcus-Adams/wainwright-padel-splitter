@@ -17,6 +17,25 @@ st.markdown(
         background: radial-gradient(1200px 600px at 10% -10%, #dbeafe 0%, rgba(219,234,254,0) 60%),
                     radial-gradient(800px 400px at 110% 10%, #fce7f3 0%, rgba(252,231,243,0) 60%);
         z-index: -1; }
+    /* Base buttons */
+    .stButton>button {
+        border-radius: 9999px !important;
+        padding: .45rem .9rem !important;
+        border: 1px solid rgba(49,51,63,.2);
+        background: rgba(49,51,63,.04);
+    }
+    /* Primary buttons (we use for active nav) */
+    .stButton>button[kind="primary"] {
+        background: #dc2626 !important; /* red-600 */
+        border-color: #dc2626 !important;
+        color: white !important;
+    }
+    .stButton>button[kind="primary"]:hover {
+        background: #b91c1c !important; /* red-700 */
+        border-color: #b91c1c !important;
+        color: white !important;
+    }
+    /* Right chip */
     .chip { background:#eef2ff; color:#3730a3; padding:.35rem .65rem; border-radius:9999px; font-size:.9rem; white-space:nowrap; }
     .topbar { margin-top:.25rem; margin-bottom:.5rem; }
     </style>
@@ -278,7 +297,6 @@ def page_register(tabs, sessions, regs, pays, players):
         columns={"player_name":"Name","player_email":"Email","registered_at":"Registered"}), use_container_width=True)
 
 def page_sessions(tabs, sessions, regs, pays, players):
-    """Sessions admin page: add sessions; view per‑session shares."""
     st.subheader("Sessions (admin)")
     with st.form("add_session"):
         c1, c2, c3 = st.columns([1,1,2])
@@ -287,11 +305,8 @@ def page_sessions(tabs, sessions, regs, pays, players):
         with c3: notes = st.text_input("Notes (optional)", value="")
         if st.form_submit_button("Add session", use_container_width=True):
             sid = to_iso_date(d)
-            if not sessions[sessions["session_id"] == sid].empty:
-                st.error("A session for this date already exists.", icon="⚠️")
-            else:
-                append_row(tabs["sessions"], [sid, sid, fee, notes, now_iso()])
-                st.success("Session added.", icon="✅")
+            if not sessions[sessions["session_id"] == sid].empty: st.error("A session for this date already exists.", icon="⚠️")
+            else: append_row(tabs["sessions"], [sid, sid, fee, notes, now_iso()]); st.success("Session added.", icon="✅")
     if sessions.empty: return
     st.divider(); st.subheader("Session list")
     sess = sessions.sort_values("date", ascending=False).copy()
@@ -302,8 +317,7 @@ def page_sessions(tabs, sessions, regs, pays, players):
         share = (fee/attendees) if attendees>0 else 0.0
         rows.append({"Date":sid,"Fee":fee,"Attendees":attendees,"Per-person share":share,"Notes":s.get("notes","")})
     view = pd.DataFrame(rows)
-    if not view.empty:
-        st.dataframe(view.style.format({"Fee":"£{:.2f}","Per-person share":"£{:.2f}"}), use_container_width=True)
+    if not view.empty: st.dataframe(view.style.format({"Fee":"£{:.2f}","Per-person share":"£{:.2f}"}), use_container_width=True)
 
 def page_my_profile(tabs, sessions, regs, pays, players):
     email = signed_in_email()
@@ -334,7 +348,7 @@ def page_my_profile(tabs, sessions, regs, pays, players):
             else:
                 ws = tabs["players"]
                 if not existing.empty:
-                    rownum = int(existing.index[0]) + 2  # +1 header +1 for 1-indexing
+                    rownum = int(existing.index[0]) + 2
                     ws.update(f"B{rownum}:E{rownum}", [[name, whatsapp, payout_link, "TRUE"]])
                     st.cache_data.clear()
                 else:
@@ -355,20 +369,21 @@ if "page" not in st.session_state:
     st.session_state["page"] = "Balances"
 
 pages = ["Balances", "Register", "Sessions", "My Profile"]
-left, right = st.columns([3, 2], gap="small")
+# Build a single row: 4 nav buttons on left, status chip + logout on right
+nav_cols = st.columns([1,1,1,1, 5, 2])
+for i, p in enumerate(pages):
+    is_active = (st.session_state["page"] == p)
+    with nav_cols[i]:
+        if st.button(p, key=f"nav_{p}", use_container_width=True, type=("primary" if is_active else "secondary")):
+            if not is_active:
+                st.session_state["page"] = p
+                st.rerun()
 
-with left:
-    current_index = pages.index(st.session_state["page"]) if st.session_state.get("page") in pages else 0
-    choice = st.radio("Navigation", pages, index=current_index, horizontal=True, label_visibility="collapsed", key="nav_radio")
-    st.session_state["page"] = choice
-
-with right:
-    c1, c2 = st.columns([3,1])
-    with c1:
-        st.markdown(f"<div class='topbar' style='display:flex;justify-content:flex-end;align-items:center;height:38px'><span class='chip'>Logged in as {signed_in_email()}</span></div>", unsafe_allow_html=True)
-    with c2:
-        if st.button("Log out", key="logout_btn"):
-            logout()
+with nav_cols[-2]:
+    st.markdown(f"<div class='topbar' style='display:flex;justify-content:flex-end;align-items:center;height:38px'><span class='chip'>Logged in as {signed_in_email()}</span></div>", unsafe_allow_html=True)
+with nav_cols[-1]:
+    if st.button("Log out", key="logout_btn", use_container_width=True):
+        logout()
 
 tabs, sessions, regs, pays, players = load_all()
 
