@@ -1,4 +1,4 @@
-# 🎾 Wainwright Padel Team — Payments App (v1)
+# 🎾 {Your Team Name} Padel Team — Payments App (v1)
 
 [![Deploy to Streamlit](https://img.shields.io/badge/Deploy%20to-Streamlit-FF4B4B?logo=streamlit&logoColor=white)](https://share.streamlit.io/deploy)
 [![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://<your-subdomain>.streamlit.app)
@@ -61,7 +61,7 @@ Everything is in a single `app.py`. Data model is five worksheets in one Google 
 ### 1) `meta` (configuration)
 | key            | value                    | updated_at           |
 |----------------|--------------------------|----------------------|
-| group_name     | Wainwright Padel Team    | 2025-11-02T10:00:00Z |
+| group_name     | {Your Team} Padel Team    | 2025-11-02T10:00:00Z |
 | payer_email    | example@domain.com       | 2025-11-02T10:00:00Z |
 | monzo_username | monzo.me/yourusername    | 2025-11-02T10:00:00Z |
 | join_code      | your-passcode            | 2025-11-02T10:00:00Z |
