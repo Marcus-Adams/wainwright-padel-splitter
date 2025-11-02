@@ -1,4 +1,7 @@
-# 🎾 Any Padel Team — Payments App (v1)
+# 🎾 Wainwright Padel Team — Payments App (v1)
+
+[![Deploy to Streamlit](https://img.shields.io/badge/Deploy%20to-Streamlit-FF4B4B?logo=streamlit&logoColor=white)](https://share.streamlit.io/deploy)
+[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://<your-subdomain>.streamlit.app)
 
 A simple Streamlit app that lets a padel group:
 - create weekly **sessions** (with total court fee),
@@ -30,6 +33,27 @@ Data lives in **Google Sheets** so it’s easy to audit, edit, or migrate.
 
 ---
 
+## 📸 Screenshots
+
+> Add your own screenshots to `docs/screens/` with these filenames, or adjust the paths below.
+
+<p align="center">
+  <img src="docs/screens/01_login.png" alt="Login" width="45%"/>
+  <img src="docs/screens/02_payments.png" alt="Payments page" width="45%"/>
+</p>
+<p align="center">
+  <img src="docs/screens/03_register.png" alt="Register page" width="45%"/>
+  <img src="docs/screens/04_sessions.png" alt="Sessions page" width="45%"/>
+</p>
+<p align="center">
+  <img src="docs/screens/05_profile.png" alt="Profile page" width="45%"/>
+</p>
+
+**How to capture**  
+Use your browser’s screenshot tool (or macOS: `⌘⇧4`, Windows: `Win+Shift+S`) and save to `docs/screens/` with the names above. Commit and push — GitHub will render them in the README.
+
+---
+
 ## Architecture
 
 Everything is in a single `app.py`. Data model is five worksheets in one Google Sheet:
@@ -37,7 +61,7 @@ Everything is in a single `app.py`. Data model is five worksheets in one Google 
 ### 1) `meta` (configuration)
 | key            | value                    | updated_at           |
 |----------------|--------------------------|----------------------|
-| group_name     | Your Name Padel Team    | 2025-11-02T10:00:00Z |
+| group_name     | Wainwright Padel Team    | 2025-11-02T10:00:00Z |
 | payer_email    | example@domain.com       | 2025-11-02T10:00:00Z |
 | monzo_username | monzo.me/yourusername    | 2025-11-02T10:00:00Z |
 | join_code      | your-passcode            | 2025-11-02T10:00:00Z |
@@ -72,50 +96,25 @@ Everything is in a single `app.py`. Data model is five worksheets in one Google 
 
 ---
 
-## Set-up (Google Sheet + Service Account)
+## ⚡ One‑click deploy
 
-1. **Create a Google Sheet**
-   - Add the 5 tabs: `meta`, `sessions`, `registrations`, `payments`, `players`
-   - Paste the exact headers as documented above.
-
-2. **Create a Service Account (GCP)**
-   - In Google Cloud Console: *IAM & Admin → Service Accounts* → *Create service account*
-   - Create a **JSON key** and keep it safe.
-
-3. **Share the Sheet with the Service Account**
-   - In Google Sheets: *Share* → add your service account email → **Editor**.
-
-4. **Copy your Sheet ID**
-   - From the URL: `https://docs.google.com/spreadsheets/d/👉 SHEET_ID 👈/edit`
-
----
-
-## Deploy on Streamlit Cloud
-
-1. **Fork** this repo to your GitHub.
-2. In Streamlit Cloud: **New app** → select your repo.
-3. **Secrets** (Settings → Secrets) — minimal, cleaned version:
-
+1. Click **Deploy to Streamlit** at the top of this README.
+2. In the Community Cloud form:
+   - **Repository**: your fork of this repo
+   - **Branch**: `main`
+   - **Main file path**: `app.py`
+   - **Python version** (Advanced settings): `3.11` recommended
+3. In **Settings → Secrets**, paste the minimal secrets:
    ```toml
-   # REQUIRED: paste your full service account JSON here (exactly as downloaded)
    gcp_service_account = """
-   {
-     "type": "service_account",
-     "project_id": "YOUR_PROJECT",
-     "private_key_id": "…",
-     "private_key": "-----BEGIN PRIVATE KEY-----\n…\n-----END PRIVATE KEY-----\n",
-     "client_email": "YOUR_SA@YOUR_PROJECT.iam.gserviceaccount.com",
-     "client_id": "…",
-     "token_uri": "https://oauth2.googleapis.com/token"
-   }
+   { ...full JSON from your Google service account key... }
    """
 
    [sheets]
-   # REQUIRED: your Google Sheet ID
-   db_key = "YOUR_SHEET_ID"
+   db_key = "YOUR_GOOGLE_SHEET_ID"
    ```
-
-4. Click **Deploy**.
+4. Share your Google Sheet with the service account email from the JSON (`client_email`) as **Editor**.
+5. Click **Deploy**.
 
 ---
 
