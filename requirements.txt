@@ -1,4 +1,7 @@
-streamlit==1.39.0
-gspread==6.1.4
-google-auth==2.34.0
-pandas==2.2.2
+# Streamlit app
+streamlit>=1.28,<2
+
+# Data & Google Sheets
+pandas>=2.2,<3
+gspread>=6.0.0
+google-auth>=2.23,<3
