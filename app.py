@@ -5,7 +5,7 @@ from datetime import datetime, date
 import json, re
 import gspread
 from google.oauth2.service_account import Credentials
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 st.set_page_config(page_title="Padel Splitter", page_icon="🎾", layout="wide")
 
@@ -23,7 +23,7 @@ st.markdown(
         padding: .45rem .9rem !important;
         border: 1px solid rgba(49,51,63,.2);
         background: rgba(49,51,63,.04);
-        white-space: nowrap;              /* single line */
+        white-space: nowrap;
     }
     /* Primary buttons (active nav) */
     .stButton>button[kind="primary"] {
@@ -236,13 +236,32 @@ def monzo_request_link(username, amount, description):
 def wa_sanitise_number(s: str) -> str | None:
     digits = re.sub(r'\D', '', s or '')
     if not digits: return None
-    # Normalise common UK inputs to international without + (required by wa.me)
     if digits.startswith('00'): digits = digits[2:]
     if digits.startswith('0') and len(digits) == 11:  # e.g. 07123456789
         digits = '44' + digits[1:]
     if digits.startswith('7') and len(digits) == 10:  # e.g. 7123456789
         digits = '44' + digits
     return digits
+
+def get_payer_generic_link(players_df, payer_email):
+    try:
+        row = players_df[players_df["player_email"].str.lower() == payer_email.lower()]
+        if row.empty: return None
+        link = str(row["payout_link"].iloc[0] or "").strip()
+        return link or None
+    except Exception:
+        return None
+
+def provider_label_from_url(url: str) -> str:
+    try:
+        host = urlparse(url).netloc.lower()
+    except Exception:
+        host = ""
+    if "paypal" in host: return "Pay with PayPal"
+    if "revolut" in host: return "Pay with Revolut"
+    if "wise" in host: return "Pay with Wise"
+    if "cash.app" in host or "cashapp" in host: return "Pay with Cash App"
+    return "Open payer’s payment link"
 
 def load_all():
     tabs = ensure_all_tabs()
@@ -262,7 +281,6 @@ def fmt_uk_date(s: str) -> str:
 
 # ----------------- Pages -----------------
 def page_balances(tabs, sessions, regs, pays, players):
-    # Show any flash messages from previous actions
     if st.session_state.get("flash_msg"):
         toast_ok(st.session_state.pop("flash_msg"))
 
@@ -282,6 +300,7 @@ def page_balances(tabs, sessions, regs, pays, players):
     st.dataframe(df[["Player","Email","Balance"]].style.format({"Balance":"£{:.2f}"}), use_container_width=True, hide_index=True)
 
     me = signed_in_email(); monzo_user = payer_monzo_username(); payer = payer_email
+    payer_generic_link = get_payer_generic_link(players, payer_email)
 
     # --- Log payment (self only) ---
     st.divider(); st.subheader("Log a payment (you only)")
@@ -289,21 +308,75 @@ def page_balances(tabs, sessions, regs, pays, players):
         st.info("You're the payer. Players log their own payments; you can't log on behalf of others.", icon="ℹ️")
     else:
         my_name = names.get(me, "")
-        with st.form("log_payment_self"):
+        tabs_pay = st.tabs(["Pay manually, and log paid", "Pay by payment link"])
+
+        # Option 1: Manual + log
+        with tabs_pay[0]:
+            with st.form("log_payment_self_manual"):
+                c1, c2 = st.columns([2,1])
+                with c1:
+                    st.text_input("Your email", value=me, disabled=True)
+                    name = st.text_input("Your name", value=my_name)
+                    note = st.text_input("Note (optional)", value="")
+                with c2:
+                    amount = st.number_input("Amount (£)", min_value=0.0, step=1.0, format="%.2f", key="amt_manual")
+                    paid_at = st.date_input("Paid on", value=date.today(), key="date_manual")
+                if st.form_submit_button("Log paid", use_container_width=True):
+                    if not name: toast_err("Name is required.")
+                    elif amount <= 0: toast_err("Amount must be greater than zero.")
+                    else:
+                        append_row(tabs["payments"], [me, name, amount, to_iso_date(paid_at), note])
+                        st.session_state["flash_msg"] = "Payment recorded and balances updated."
+                        st.rerun()
+
+        # Option 2: Pay via payer's link + log
+        with tabs_pay[1]:
+            st.caption("Tip: add a payment link in your **Profile** if you’re ever the payer, so others can pay you easily (Monzo, Revolut, PayPal, etc.).")
             c1, c2 = st.columns([2,1])
             with c1:
-                st.text_input("Your email", value=me, disabled=True)
-                name = st.text_input("Your name", value=my_name)
-                note = st.text_input("Note (optional)", value="")
+                st.text_input("Your email", value=me, disabled=True, key="paylink_email")
+                name2 = st.text_input("Your name", value=my_name, key="paylink_name")
+                note2 = st.text_input("Note (optional)", value="Padel settle-up", key="paylink_note")
             with c2:
-                amount = st.number_input("Amount (£)", min_value=0.0, step=1.0, format="%.2f")
-                paid_at = st.date_input("Paid on", value=date.today())
-            if st.form_submit_button("Add payment", use_container_width=True):
-                if not name: toast_err("Name is required.")
-                elif amount <= 0: toast_err("Amount must be greater than zero.")
+                amount2 = st.number_input("Amount (£)", min_value=0.0, step=1.0, format="%.2f", key="amt_link")
+                paid_at2 = st.date_input("Paid on", value=date.today(), key="date_link")
+
+            # Buttons row (Monzo + alternate if present)
+            bcol1, bcol2, bcol3 = st.columns([1,1,1.2])
+
+            if monzo_user and amount2 > 0:
+                monzo_url = monzo_request_link(monzo_user, amount2, f"Padel {group_name()}")
+                with bcol1:
+                    try:
+                        st.link_button("Pay with Monzo", monzo_url, use_container_width=True, type="secondary")
+                    except Exception:
+                        st.markdown(f"[Pay with Monzo]({monzo_url})")
+            elif monzo_user:
+                with bcol1:
+                    st.info("Enter an amount to enable Monzo link.", icon="ℹ️")
+
+            if payer_generic_link:
+                alt_label = provider_label_from_url(payer_generic_link)
+                with bcol2:
+                    try:
+                        st.link_button(alt_label, payer_generic_link, use_container_width=True, type="secondary")
+                    except Exception:
+                        st.markdown(f"[{alt_label}]({payer_generic_link})")
+
+            # Copy helpers
+            with bcol3:
+                st.caption("Copy helpers")
+                st.code(f"{currency(amount2)}", language=None)  # includes copy icon
+                st.code(f"Padel {group_name()}", language=None)
+
+            # Confirm + log
+            if st.button("I've paid — Log it", use_container_width=True, type="primary"):
+                if not name2:
+                    toast_err("Name is required.")
+                elif amount2 <= 0:
+                    toast_err("Amount must be greater than zero.")
                 else:
-                    append_row(tabs["payments"], [me, name, amount, to_iso_date(paid_at), note])
-                    # Immediately refresh page so the balances table above reflects the change
+                    append_row(tabs["payments"], [me, name2, amount2, to_iso_date(paid_at2), note2])
                     st.session_state["flash_msg"] = "Payment recorded and balances updated."
                     st.rerun()
 
@@ -321,7 +394,7 @@ def page_balances(tabs, sessions, regs, pays, players):
             lines.append(part)
     wa_text = "\n".join(lines) if len(lines) > 2 else "No one owes anything right now 🎉"
 
-    # Option A: Open WhatsApp share composer (payer chooses recipients)
+    # Option A — share composer
     st.caption("Option A — open the WhatsApp share composer and pick recipients:")
     share_url = f"https://wa.me/?text={quote(wa_text)}"
     try:
@@ -329,8 +402,9 @@ def page_balances(tabs, sessions, regs, pays, players):
     except Exception:
         st.markdown(f"[Open WhatsApp]({share_url})")
 
-    # Option B: Personalised chats to selected players (only those who owe and have a number)
+    # Option B — individual chats
     owe_df = df[(df["Balance"] > 0) & (df["Email"] != payer_email)].copy()
+    wa_map = {r["Email"]: wa_map.get(r["Email"], "") for _, r in owe_df.iterrows()}  # reuse earlier map
     owe_df["WhatsApp"] = owe_df["Email"].map(wa_map).fillna("")
     owe_df["wa_clean"] = owe_df["WhatsApp"].map(wa_sanitise_number)
 
@@ -342,7 +416,6 @@ def page_balances(tabs, sessions, regs, pays, players):
 
     if options:
         selected = st.multiselect("Select players", options, help="We’ll open one chat per selected player with their own amount.")
-        # Build a mapping from display string to data
         display_map = {f"{r['Player']}  (+{r['wa_clean']})": r for _, r in owe_df.iterrows() if r["wa_clean"]}
         cols = st.columns(2)
         i = 0
@@ -351,13 +424,11 @@ def page_balances(tabs, sessions, regs, pays, players):
             num = r["wa_clean"]
             person = r["Player"]
             amt = r["Balance"]
-            # personalised message
             base = f"Hi {person} — please settle {currency(amt)} for {group_name()}"
             if monzo_user:
                 link = monzo_request_link(monzo_user, amt, f"Padel {group_name()}")
                 base += f" → {link}"
-            person_text = base
-            url = f"https://wa.me/{num}?text={quote(person_text)}"
+            url = f"https://wa.me/{num}?text={quote(base)}"
             with cols[i % 2]:
                 try:
                     st.link_button(f"Open chat with {person}", url, use_container_width=True)
@@ -384,7 +455,6 @@ def page_register(tabs, sessions, regs, pays, players):
     existing = players[players["player_email"].str.lower() == email]
     name_to_use = (existing["player_name"].iloc[0] if not existing.empty else _derived_name_from_email(email))
 
-    # Session dropdown formatted as dd/mm/yyyy, but values are session_ids
     options = latest_first["session_id"].tolist()
     sid = st.selectbox("Which session?", options, index=0, format_func=fmt_uk_date)
 
@@ -402,7 +472,6 @@ def page_register(tabs, sessions, regs, pays, players):
     st.divider(); st.subheader("Who else is playing / played?")
     regs_for_selected = regs[regs["session_id"] == sid].copy()
 
-    # Registered column: dd/mm/yyyy HH:MM (drop any trailing Z)
     def fmt_ts_ddmm(s):
         try:
             ts = pd.to_datetime(s, errors="raise")
@@ -428,7 +497,7 @@ def page_sessions(tabs, sessions, regs, pays, players):
         with c2: fee = st.number_input("Court fee (£)", min_value=0.0, step=1.0, format="%.2f")
         with c3: notes = st.text_input("Notes (optional)", value="")
         if st.form_submit_button("Add session", use_container_width=True):
-            sid = to_iso_date(d)  # store canonical yyyy-mm-dd
+            sid = to_iso_date(d)
             if not sessions[sessions["session_id"] == sid].empty:
                 st.error("A session for this date already exists.", icon="⚠️")
             else:
@@ -513,11 +582,9 @@ with header_right:
 if "page" not in st.session_state:
     st.session_state["page"] = "Balances"
 
-# 5 equal-width pills including Logout
 pages = ["Balances", "Register", "Sessions", "Profile"]
 nav_cols = st.columns([1,1,1,1,1])
 
-# Left 4: pages
 for i, p in enumerate(pages):
     is_active = (st.session_state["page"] == p)
     with nav_cols[i]:
@@ -526,7 +593,6 @@ for i, p in enumerate(pages):
                 st.session_state["page"] = p
                 st.rerun()
 
-# Rightmost: Logout pill (styled like others, not a page)
 with nav_cols[-1]:
     if st.button("Log out", key="logout_btn", use_container_width=True, type="secondary"):
         logout()
