@@ -17,12 +17,38 @@ st.markdown(
         background: radial-gradient(1200px 600px at 10% -10%, #dbeafe 0%, rgba(219,234,254,0) 60%),
                     radial-gradient(800px 400px at 110% 10%, #fce7f3 0%, rgba(252,231,243,0) 60%);
         z-index: -1; }
-    .stButton>button { border-radius: 9999px !important; padding: .45rem .9rem !important; border: 1px solid rgba(49,51,63,.2); background: rgba(49,51,63,.04); white-space: nowrap; }
-    .stButton>button[kind="primary"] { background: #dc2626 !important; border-color: #dc2626 !important; color: white !important; }
-    .stButton>button[kind="primary"]:hover { background: #b91c1c !important; border-color: #b91c1c !important; color: white !important; }
-    .chip { background:#eef2ff; color:#3730a3; padding:.35rem .65rem; border-radius:9999px; font-size:.9rem; white-space:nowrap; max-width: 260px; text-overflow: ellipsis; overflow: hidden; display:inline-block; }
+    /* Base buttons */
+    .stButton>button {
+        border-radius: 9999px !important;
+        padding: .45rem .9rem !important;
+        border: 1px solid rgba(49,51,63,.2);
+        background: rgba(49,51,63,.04);
+        white-space: nowrap;              /* single line */
+    }
+    /* Primary buttons (active nav) */
+    .stButton>button[kind="primary"] {
+        background: #dc2626 !important;   /* red-600 */
+        border-color: #dc2626 !important;
+        color: white !important;
+    }
+    .stButton>button[kind="primary"]:hover {
+        background: #b91c1c !important;   /* red-700 */
+        border-color: #b91c1c !important;
+        color: white !important;
+    }
+    /* Title & chip row */
+    .chip {
+        background:#eef2ff; color:#3730a3;
+        padding:.35rem .65rem; border-radius:9999px;
+        font-size:.9rem; white-space:nowrap;
+        max-width: 260px; text-overflow: ellipsis; overflow: hidden; display:inline-block;
+    }
     .top-right { display:flex; justify-content:flex-end; align-items:flex-start; margin-top:.2rem; }
-    @media (max-width: 600px) { .stButton>button { padding:.32rem .6rem !important; font-size:.85rem !important; } .chip { max-width: 160px; font-size:.82rem; } }
+    /* Mobile tweaks */
+    @media (max-width: 600px) {
+        .stButton>button { padding:.32rem .6rem !important; font-size:.85rem !important; }
+        .chip { max-width: 160px; font-size:.82rem; }
+    }
     </style>
     ''', unsafe_allow_html=True
 )
@@ -50,6 +76,7 @@ def logout():
         del st.session_state[k]
     st.rerun()
 
+# Pretty, *separate* login screen
 def login_page():
     st.markdown('<div class="login-bg"></div>', unsafe_allow_html=True)
     st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
@@ -85,6 +112,7 @@ def login_page():
                     st.rerun()
     st.stop()
 
+# ----------------- Google Sheets client -----------------
 @st.cache_resource(show_spinner=False)
 def get_gsheet_client():
     raw = st.secrets["gcp_service_account"]
@@ -124,9 +152,11 @@ def ensure_all_tabs():
 
 @st.cache_data(show_spinner=False, ttl=20)
 def fetch_all_tables_as_dfs():
-    sh = open_db()
+    # Use batch VALUES get via client to reduce quota usage
+    client = get_gsheet_client()
+    key = st.secrets["sheets"]["db_key"]
     ranges = ["sessions!A1:E", "registrations!A1:D", "payments!A1:E", "players!A1:F"]
-    resp = sh.values_batch_get(ranges)
+    resp = client.values_batch_get(key, ranges)
     value_ranges = resp.get("valueRanges", [])
     while len(value_ranges) < 4:
         value_ranges.append({"values": []})
@@ -211,6 +241,14 @@ def load_all():
 def toast_ok(msg): st.success(msg, icon="✅")
 def toast_err(msg): st.error(msg, icon="⚠️")
 
+# Helper: UK date from sid like 'YYYY-MM-DD'
+def fmt_uk_date(s: str) -> str:
+    try:
+        d = datetime.strptime(str(s)[:10], "%Y-%m-%d").date()
+        return d.strftime("%d/%m/%Y")
+    except Exception:
+        return str(s)
+
 # ----------------- Pages -----------------
 def page_balances(tabs, sessions, regs, pays, players):
     payer_email = st.secrets["sheets"].get("payer_email", "").strip()
@@ -272,7 +310,9 @@ def page_register(tabs, sessions, regs, pays, players):
     existing = players[players["player_email"].str.lower() == email]
     name_to_use = (existing["player_name"].iloc[0] if not existing.empty else _derived_name_from_email(email))
 
-    sid = st.selectbox("Which session?", latest_first["session_id"].tolist(), index=0)
+    # Session dropdown formatted as dd/mm/yyyy, but values are session_ids
+    options = latest_first["session_id"].tolist()
+    sid = st.selectbox("Which session?", options, index=0, format_func=fmt_uk_date)
 
     if st.button("I'm Playing / I Played", use_container_width=True, type="primary"):
         already = regs[(regs["session_id"] == sid) & (regs["player_email"].str.lower() == email)]
@@ -287,23 +327,23 @@ def page_register(tabs, sessions, regs, pays, players):
     st.divider(); st.subheader("Who else is playing / played?")
     regs_for_selected = regs[regs["session_id"] == sid].copy()
 
-    # Format registered_at as dd/mmm/yyyy <space> HH:MM (drop the trailing 'Z')
-    def fmt_ts(s):
+    # Registered column: dd/mm/yyyy HH:MM (drop any trailing Z)
+    def fmt_ts_ddmm(s):
         try:
             ts = pd.to_datetime(s, errors="raise")
-            # turn into naive dt without timezone suffix; keep the clock time as-is
             if hasattr(ts, "tzinfo") and ts.tzinfo is not None:
                 py = ts.to_pydatetime().replace(tzinfo=None)
             else:
                 py = ts.to_pydatetime()
-            return py.strftime("%d/%b/%Y %H:%M")
+            return py.strftime("%d/%m/%Y %H:%M")
         except Exception:
             return str(s).replace("T", " ").replace("Z", "")
 
     if not regs_for_selected.empty:
-        regs_for_selected["Registered"] = regs_for_selected["registered_at"].map(fmt_ts)
+        regs_for_selected["Registered"] = regs_for_selected["registered_at"].map(fmt_ts_ddmm)
+        regs_for_selected["Date"] = fmt_uk_date(sid)
         out = regs_for_selected.rename(columns={"player_name":"Name","player_email":"Email"})
-        st.dataframe(out[["Name","Email","Registered"]], use_container_width=True)
+        st.dataframe(out[["Date","Name","Email","Registered"]], use_container_width=True)
 
 def page_sessions(tabs, sessions, regs, pays, players):
     st.subheader("Sessions (admin)")
@@ -367,9 +407,11 @@ def page_profile(tabs, sessions, regs, pays, players):
 
     st.caption("Tip: add a payment link for easy settle‑ups (Monzo, Revolut, PayPal, etc.).")
 
+# ----------------- App shell -----------------
 if not signed_in_email():
     login_page()
 
+# Header row: title on left, chip on right (top-right alignment)
 header_left, header_right = st.columns([5,2])
 with header_left:
     st.markdown(f"<h1 style='margin-bottom:0'>🎾 {group_name()}</h1>", unsafe_allow_html=True)
@@ -380,8 +422,11 @@ with header_right:
 if "page" not in st.session_state:
     st.session_state["page"] = "Balances"
 
+# 5 equal-width pills including Logout
 pages = ["Balances", "Register", "Sessions", "Profile"]
 nav_cols = st.columns([1,1,1,1,1])
+
+# Left 4: pages
 for i, p in enumerate(pages):
     is_active = (st.session_state["page"] == p)
     with nav_cols[i]:
@@ -390,6 +435,7 @@ for i, p in enumerate(pages):
                 st.session_state["page"] = p
                 st.rerun()
 
+# Rightmost: Logout pill (styled like others, not a page)
 with nav_cols[-1]:
     if st.button("Log out", key="logout_btn", use_container_width=True, type="secondary"):
         logout()
