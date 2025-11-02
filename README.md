@@ -35,8 +35,6 @@ Data lives in **Google Sheets** so it’s easy to audit, edit, or migrate.
 
 ## 📸 Screenshots
 
-> Add your own screenshots to `docs/screens/` with these filenames, or adjust the paths below.
-
 <p align="center">
   <img src="docs/screens/01_login.png" alt="Login" width="45%"/>
   <img src="docs/screens/02_payments.png" alt="Payments page" width="45%"/>
@@ -48,9 +46,6 @@ Data lives in **Google Sheets** so it’s easy to audit, edit, or migrate.
 <p align="center">
   <img src="docs/screens/05_profile.png" alt="Profile page" width="45%"/>
 </p>
-
-**How to capture**  
-Use your browser’s screenshot tool (or macOS: `⌘⇧4`, Windows: `Win+Shift+S`) and save to `docs/screens/` with the names above. Commit and push — GitHub will render them in the README.
 
 ---
 
