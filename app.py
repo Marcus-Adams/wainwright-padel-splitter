@@ -39,7 +39,7 @@ def currency(v):
     try: return f"£{float(v):.2f}"
     except Exception: return "£0.00"
 def group_name(): return st.secrets["sheets"].get("group_name", "Wainwright Paddle Team")
-def signed_in_email(): return st.session_state.get("email")
+def signed_in_email(): return (st.session_state.get("email") or "").strip().lower()
 
 def logout():
     for k in list(st.session_state.keys()):
@@ -152,6 +152,10 @@ def append_row(ws, row):
     ws.append_row(row, value_input_option="USER_ENTERED")
     st.cache_data.clear()
 
+def update_player_row(ws, rownum: int, name: str, whatsapp: str, payout_link: str):
+    ws.update(f"B{rownum}:E{rownum}", [[name, whatsapp, payout_link, "TRUE"]])
+    st.cache_data.clear()
+
 # ----------------- Domain logic -----------------
 def compute_balances(sessions_df, regs_df, payments_df, payer_email):
     balances = {}
@@ -257,13 +261,13 @@ def page_register(tabs, sessions, regs, pays, players):
         st.info("No sessions yet. Ask the payer/admin to add one on the Sessions page."); return
     latest_first = sessions.sort_values("date", ascending=False)
     email = signed_in_email()
-    existing = players[players["player_email"] == email]
-    name_default = existing["player_name"].iloc[0] if not existing.empty else ""
+    existing = players[players["player_email"].str.lower() == email]
+    name_default = (existing["player_name"].iloc[0] if not existing.empty else "")
     sid = st.selectbox("Which session?", latest_first["session_id"].tolist(), index=0)
     name = st.text_input("Your name", value=name_default)
     if st.button("I played", use_container_width=True, type="primary"):
         if not name: toast_err("Please fill in your name."); return
-        already = regs[(regs["session_id"] == sid) & (regs["player_email"] == email)]
+        already = regs[(regs["session_id"] == sid) & (regs["player_email"].str.lower() == email)]
         if not already.empty: toast_err("You're already registered for that session."); return
         append_row(tabs["registrations"], [sid, email, name, now_iso()])
         if existing.empty: append_row(tabs["players"], [email, name, "", "", "TRUE", now_iso()])
@@ -273,51 +277,47 @@ def page_register(tabs, sessions, regs, pays, players):
     st.dataframe(regs_for_selected[["player_name","player_email","registered_at"]].rename(
         columns={"player_name":"Name","player_email":"Email","registered_at":"Registered"}), use_container_width=True)
 
-def page_sessions(tabs, sessions, regs, pays, players):
-    st.subheader("Sessions (admin)")
-    with st.form("add_session"):
-        c1, c2, c3 = st.columns([1,1,2])
-        with c1: d = st.date_input("Date", value=date.today())
-        with c2: fee = st.number_input("Court fee (£)", min_value=0.0, step=1.0, format="%.2f")
-        with c3: notes = st.text_input("Notes (optional)", value="")
-        if st.form_submit_button("Add session", use_container_width=True):
-            sid = to_iso_date(d)
-            if not sessions[sessions["session_id"] == sid].empty: toast_err("A session for this date already exists.")
-            else: append_row(tabs["sessions"], [sid, sid, fee, notes, now_iso()]); toast_ok("Session added.")
-    if sessions.empty: return
-    st.divider(); st.subheader("Session list")
-    sess = sessions.sort_values("date", ascending=False).copy()
-    rows = []
-    for _, s in sess.iterrows():
-        sid = s["session_id"]; fee = parse_float(s["fee"],0.0)
-        attendees = regs[regs["session_id"] == sid]["player_email"].nunique()
-        share = (fee/attendees) if attendees>0 else 0.0
-        rows.append({"Date":sid,"Fee":fee,"Attendees":attendees,"Per-person share":share,"Notes":s.get("notes","")})
-    view = pd.DataFrame(rows)
-    if not view.empty: st.dataframe(view.style.format({"Fee":"£{:.2f}","Per-person share":"£{:.2f}"}), use_container_width=True)
-
-def page_players(tabs, sessions, regs, pays, players):
+def page_my_profile(tabs, sessions, regs, pays, players):
     email = signed_in_email()
-    st.subheader("My profile")
-    existing = players[players["player_email"] == email]
+
+    # Load existing single user record
+    existing = players[players["player_email"].str.lower() == email]
     name_default = existing["player_name"].iloc[0] if not existing.empty else ""
     wa_default = existing["whatsapp"].iloc[0] if not existing.empty else ""
     link_default = existing["payout_link"].iloc[0] if not existing.empty else ""
+
+    # Initialise session-state backed form fields for persistence
+    if "profile_name" not in st.session_state: st.session_state["profile_name"] = name_default
+    if "profile_whatsapp" not in st.session_state: st.session_state["profile_whatsapp"] = wa_default
+    if "profile_payout" not in st.session_state: st.session_state["profile_payout"] = link_default
+
+    st.subheader("My Profile")
     with st.form("profile"):
         c1, c2 = st.columns(2)
         with c1:
-            name = st.text_input("Your name", value=name_default)
-            whatsapp = st.text_input("Whatsapp number (optional)", value=wa_default, help="Just digits or +44…")
+            st.text_input("Your name", key="profile_name")
+            st.text_input("Your WhatsApp number (optional)", key="profile_whatsapp", help="Just digits or +44…")
         with c2:
-            payout_link = st.text_input("Your payment link (optional)", value=link_default, help="Your Monzo/Revolut/PayPal link")
+            st.text_input("Your payment link (optional)", key="profile_payout", help="Your Monzo/Revolut/PayPal link")
             st.write(f"Your email: **{email}**")
         if st.form_submit_button("Save profile", use_container_width=True):
-            if not name: toast_err("Name is required.")
-            else: append_row(tabs["players"], [email, name, whatsapp, payout_link, "TRUE", now_iso()]); toast_ok("Profile saved.")
-    st.divider(); st.subheader("All players (read‑only)")
-    if not players.empty:
-        show = players.copy().rename(columns={"player_name":"Name","player_email":"Email","whatsapp":"WhatsApp","payout_link":"Pay link","active":"Active"})
-        st.dataframe(show[["Name","Email","WhatsApp","Pay link","Active"]], use_container_width=True)
+            name = st.session_state["profile_name"].strip()
+            whatsapp = st.session_state["profile_whatsapp"].strip()
+            payout_link = st.session_state["profile_payout"].strip()
+            if not name:
+                toast_err("Name is required.")
+            else:
+                # Upsert: update existing row in place; otherwise append
+                ws = tabs["players"]
+                if not existing.empty:
+                    # Find first matching row index to update (sheet rows start at 1; row 1 is header)
+                    rownum = int(existing.index[0]) + 2
+                    update_player_row(ws, rownum, name, whatsapp, payout_link)
+                else:
+                    append_row(ws, [email, name, whatsapp, payout_link, "TRUE", now_iso()])
+                toast_ok("Profile saved.")
+
+    st.caption("Tip: add a payment link for easy settle‑ups (Monzo, Revolut, PayPal, etc.).")
 
 # ----------------- App shell -----------------
 if not signed_in_email():
@@ -331,7 +331,7 @@ st.caption("Fair splits for weekly court fees.")
 if "page" not in st.session_state:
     st.session_state["page"] = "Balances"
 
-pages = ["Balances", "Register", "Sessions", "Players / Profile"]
+pages = ["Balances", "Register", "Sessions", "My Profile"]
 left, right = st.columns([3, 2], gap="small")
 
 with left:
@@ -358,7 +358,7 @@ elif page == "Register":
 elif page == "Sessions":
     page_sessions(tabs, sessions, regs, pays, players)
 else:
-    page_players(tabs, sessions, regs, pays, players)
+    page_my_profile(tabs, sessions, regs, pays, players)
 
 st.markdown("---")
 st.markdown("<div style='text-align:center; opacity:0.6'>Made with ❤️ for fair splits.</div>", unsafe_allow_html=True)
