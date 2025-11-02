@@ -48,6 +48,30 @@ def _ensure_padel_favicon_png():
 
 _padel_favicon_path = _ensure_padel_favicon_png()
 
+
+# --- Inline SVG padel icon (no external fonts needed) ---
+def app_icon_svg(size: str = "1.6rem", color: str = "currentColor") -> str:
+    """Return an inline SVG padel icon."""
+    return f"""
+    <svg width="{size}" height="{size}" viewBox="0 0 24 24" fill="none"
+         xmlns="http://www.w3.org/2000/svg"
+         style="display:inline-block;vertical-align:-3px">
+      <!-- Racket head -->
+      <circle cx="10.5" cy="9.5" r="6.5" stroke="{color}" stroke-width="1.8" fill="none"/>
+      <!-- Handle -->
+      <path d="M15 14 L21 20 L19.5 21.5 L13.5 15.5 Z" fill="{color}"/>
+      <!-- Dimples -->
+      <circle cx="8.3" cy="7.5" r="0.7" fill="{color}"/>
+      <circle cx="10.5" cy="7.0" r="0.7" fill="{color}"/>
+      <circle cx="12.7" cy="7.5" r="0.7" fill="{color}"/>
+      <circle cx="8.3" cy="9.5" r="0.7" fill="{color}"/>
+      <circle cx="10.5" cy="9.5" r="0.7" fill="{color}"/>
+      <circle cx="12.7" cy="9.5" r="0.7" fill="{color}"/>
+      <circle cx="9.4" cy="11.3" r="0.7" fill="{color}"/>
+      <circle cx="11.6" cy="11.3" r="0.7" fill="{color}"/>
+    </svg>
+    """
+
 st.set_page_config(page_title="Padel Splitter", page_icon=_padel_favicon_path, layout="wide")
 
 # ----------------- Global styling -----------------
@@ -92,8 +116,8 @@ st.markdown(
     }
     
 /* Material Symbols Outlined for the Padel icon */
-@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0');
-.material-symbols-outlined {
+
+.material-symbols-outlined { /* unused now */
   font-family: 'Material Symbols Outlined';
   font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
   font-weight: normal;
@@ -152,7 +176,7 @@ def login_page():
             f"""
             <div style='background:white; border:1px solid rgba(49,51,63,.15); border-radius:16px; padding:1.25rem 1.25rem 1rem'>
                 <div style='display:flex;align-items:center;gap:.6rem;margin-bottom:.75rem'>
-                    <div style='font-size:1.75rem'><span class="material-symbols-outlined">padel</span></div>
+                    {app_icon_svg()}
                     <div>
                       <div style='font-size:1.05rem;opacity:.7'>Padel Splitter</div>
                       <div style='font-size:1.35rem;font-weight:700'>{gn}</div>
@@ -625,7 +649,7 @@ if not signed_in_email():
 # Header row: title on left, chip on right (top-right alignment)
 header_left, header_right = st.columns([5,2])
 with header_left:
-    st.markdown(f"<h1 style='margin-bottom:0'><span class='material-symbols-outlined' style='font-size:1.25rem'>padel</span> {group_name()}</h1>", unsafe_allow_html=True)
+    st.markdown(f"<h1 style='margin-bottom:0'>{app_icon_svg('1.25rem')} {group_name()}</h1>", unsafe_allow_html=True)
     st.caption("Fair splits for weekly court fees.")
 with header_right:
     st.markdown(f"<div class='top-right'><span class='chip'>Logged in as {signed_in_email()}</span></div>", unsafe_allow_html=True)
