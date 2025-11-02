@@ -141,6 +141,9 @@ streamlit run app.py
 
 ## Monzo links
 
+Enter the payers detail in the meta sheet (monzo_username) in the Google Sheet.
+The payer_email is an importnat field as this setting ensures that the payer (whislt included in split calculations if also a player) does not request money from themselves.
+
 The payer’s Monzo username may be entered as:
 - `username`
 - `monzo.me/username`
