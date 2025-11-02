@@ -36,18 +36,18 @@ st.markdown(
         border-color: #b91c1c !important;
         color: white !important;
     }
-    /* Right chip */
+    /* Title & chip row */
     .chip {
         background:#eef2ff; color:#3730a3;
         padding:.35rem .65rem; border-radius:9999px;
         font-size:.9rem; white-space:nowrap;
-        max-width: 220px; text-overflow: ellipsis; overflow: hidden; display:inline-block;
+        max-width: 260px; text-overflow: ellipsis; overflow: hidden; display:inline-block;
     }
-    .topbar { margin-top:.25rem; margin-bottom:.5rem; }
+    .top-right { display:flex; justify-content:flex-end; align-items:flex-start; margin-top:.2rem; }
     /* Mobile tweaks */
     @media (max-width: 600px) {
-        .stButton>button { padding:.35rem .7rem !important; font-size:.88rem !important; }
-        .chip { max-width: 140px; font-size:.85rem; }
+        .stButton>button { padding:.32rem .6rem !important; font-size:.85rem !important; }
+        .chip { max-width: 160px; font-size:.82rem; }
     }
     </style>
     ''', unsafe_allow_html=True
@@ -373,16 +373,22 @@ def page_profile(tabs, sessions, regs, pays, players):
 if not signed_in_email():
     login_page()
 
-st.markdown(f"<h1 style='margin-bottom:0'>🎾 {group_name()}</h1>", unsafe_allow_html=True)
-st.caption("Fair splits for weekly court fees.")
+# Header row: title on left, chip on right (top-right alignment)
+header_left, header_right = st.columns([5,2])
+with header_left:
+    st.markdown(f"<h1 style='margin-bottom:0'>🎾 {group_name()}</h1>", unsafe_allow_html=True)
+    st.caption("Fair splits for weekly court fees.")
+with header_right:
+    st.markdown(f"<div class='top-right'><span class='chip'>Logged in as {signed_in_email()}</span></div>", unsafe_allow_html=True)
 
 if "page" not in st.session_state:
     st.session_state["page"] = "Balances"
 
-# Shorter label "Profile" and give nav much more width on the row
+# 5 equal-width pills including Logout
 pages = ["Balances", "Register", "Sessions", "Profile"]
-nav_cols = st.columns([5,5,5,5, 2, 2])   # 4 wide buttons, then small chip + logout cols
+nav_cols = st.columns([1,1,1,1,1])
 
+# Left 4: pages
 for i, p in enumerate(pages):
     is_active = (st.session_state["page"] == p)
     with nav_cols[i]:
@@ -391,13 +397,9 @@ for i, p in enumerate(pages):
                 st.session_state["page"] = p
                 st.rerun()
 
-with nav_cols[-2]:
-    st.markdown(
-        f"<div class='topbar' style='display:flex;justify-content:flex-end;align-items:center;height:38px'><span class='chip'>Logged in as {signed_in_email()}</span></div>",
-        unsafe_allow_html=True
-    )
+# Rightmost: Logout pill (styled like others, not a page)
 with nav_cols[-1]:
-    if st.button("Log out", key="logout_btn", use_container_width=True):
+    if st.button("Log out", key="logout_btn", use_container_width=True, type="secondary"):
         logout()
 
 tabs, sessions, regs, pays, players = load_all()
