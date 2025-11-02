@@ -1,4 +1,4 @@
-# 🎾 {Your Team Name} Padel Team — Payments App (v1)
+# 🎾 Padel Team — Payments App (v1)
 
 [![Deploy to Streamlit](https://img.shields.io/badge/Deploy%20to-Streamlit-FF4B4B?logo=streamlit&logoColor=white)](https://share.streamlit.io/deploy)
 [![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://<your-subdomain>.streamlit.app)
