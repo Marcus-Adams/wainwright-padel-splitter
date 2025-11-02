@@ -1,4 +1,4 @@
-# 🎾 Wainwright Padel Team — Payments App (v1)
+# 🎾 Any Padel Team — Payments App (v1)
 
 A simple Streamlit app that lets a padel group:
 - create weekly **sessions** (with total court fee),
