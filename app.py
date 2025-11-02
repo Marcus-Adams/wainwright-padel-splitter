@@ -68,7 +68,7 @@ def parse_float(value, default=0.0):
 def currency(v):
     try: return f"£{float(v):.2f}"
     except Exception: return "£0.00"
-def group_name(): return st.secrets["sheets"].get("group_name", "Wainwright Paddle Team")
+
 def signed_in_email(): return (st.session_state.get("email") or "").strip().lower()
 
 def logout():
@@ -101,7 +101,8 @@ def login_page():
             join_code = st.text_input("Group passcode", type="password")
             submitted = st.form_submit_button("Log in", use_container_width=True, type="primary")
             if submitted:
-                code = st.secrets.get("auth", {}).get("join_code", "").strip()
+                st.session_state["meta_settings"] = read_meta_dict_cached()
+                    code = (get_meta("join_code", "") or st.secrets.get("auth", {}).get("join_code", "")).strip()
                 if not email:
                     st.error("Email is required.", icon="⚠️")
                 elif code and join_code != code:
@@ -217,6 +218,39 @@ def fmt_uk_date(s: str) -> str:
         return str(s)
 
 def _derived_name_from_email(email: str) -> str:
+
+def get_meta(key, default=None):
+    return st.session_state.get("meta_settings", {}).get(key, default)
+
+@st.cache_data(show_spinner=False, ttl=30)
+def read_meta_dict_cached():
+    try:
+        sh = open_db()
+        try:
+            ws = sh.worksheet("meta")
+        except Exception:
+            return {}
+        rows = ws.get_all_records()
+        meta = {}
+        for r in rows:
+            k = str(r.get("key","")).strip()
+            v = str(r.get("value","")).strip()
+            if k:
+                meta[k] = v
+        return meta
+    except Exception:
+        return {}
+
+def group_name():
+    return get_meta("group_name") or st.secrets.get("sheets", {}).get("group_name", "Wainwright Paddle Team")
+
+def payer_email_setting():
+    raw = get_meta("payer_email") or st.secrets.get("sheets", {}).get("payer_email", "")
+    return (raw or "").strip().lower()
+
+def payer_monzo_username():
+    raw = get_meta("monzo_username") or st.secrets.get("payments", {}).get("monzo_username")
+    return normalise_monzo_username(raw) if raw else None
     local = (email or "").split("@")[0]
     local = local.replace('.', ' ').replace('_',' ').replace('-',' ')
     return " ".join([w.capitalize() for w in local.split() if w]) or email
@@ -247,7 +281,7 @@ def compute_balances(sessions_df, regs_df, payments_df, payer_email):
 def page_balances(tabs, sessions, regs, pays, players):
     if st.session_state.get("flash_msg"): st.success(st.session_state.pop("flash_msg"), icon="✅")
 
-    payer_email = st.secrets["sheets"].get("payer_email", "").strip()
+    payer_email = payer_email_setting()
     if not payer_email:
         st.warning("Set **payer_email** in Streamlit secrets.", icon="⚙️"); return
     balances = compute_balances(sessions, regs, pays, payer_email)
