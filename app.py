@@ -217,6 +217,9 @@ def fmt_uk_date(s: str) -> str:
         return str(s)
 
 def _derived_name_from_email(email: str) -> str:
+    local = (email or "").split("@")[0]
+    local = local.replace('.', ' ').replace('_',' ').replace('-',' ')
+    return " ".join([w.capitalize() for w in local.split() if w]) or email
 
 def get_meta(key, default=None):
     return st.session_state.get("meta_settings", {}).get(key, default)
@@ -250,9 +253,7 @@ def payer_email_setting():
 def payer_monzo_username():
     raw = get_meta("monzo_username") or st.secrets.get("payments", {}).get("monzo_username")
     return normalise_monzo_username(raw) if raw else None
-    local = (email or "").split("@")[0]
-    local = local.replace('.', ' ').replace('_',' ').replace('-',' ')
-    return " ".join([w.capitalize() for w in local.split() if w]) or email
+
 
 # ----------------- Domain logic -----------------
 def compute_balances(sessions_df, regs_df, payments_df, payer_email):
