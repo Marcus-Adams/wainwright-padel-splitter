@@ -2,7 +2,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, date
-import json
+import json, re
 import gspread
 from google.oauth2.service_account import Credentials
 from urllib.parse import quote
@@ -233,6 +233,17 @@ def monzo_request_link(username, amount, description):
     amt = f"{float(amount):.2f}"
     return f"https://monzo.me/{username}/{amt}?d={quote(description)}"
 
+def wa_sanitise_number(s: str) -> str | None:
+    digits = re.sub(r'\D', '', s or '')
+    if not digits: return None
+    # Normalise common UK inputs to international without + (required by wa.me)
+    if digits.startswith('00'): digits = digits[2:]
+    if digits.startswith('0') and len(digits) == 11:  # e.g. 07123456789
+        digits = '44' + digits[1:]
+    if digits.startswith('7') and len(digits) == 10:  # e.g. 7123456789
+        digits = '44' + digits
+    return digits
+
 def load_all():
     tabs = ensure_all_tabs()
     sessions, regs, pays, players = fetch_all_tables_as_dfs()
@@ -255,14 +266,20 @@ def page_balances(tabs, sessions, regs, pays, players):
     if not payer_email:
         st.warning("Set **payer_email** in Streamlit secrets.", icon="⚙️"); return
     balances = compute_balances(sessions, regs, pays, payer_email)
+
     names = {r["player_email"]: r["player_name"] for _, r in players.iterrows() if r.get("player_email")}
+    wa_map = {r["player_email"]: r.get("whatsapp","") for _, r in players.iterrows() if r.get("player_email")}
+
     entries = [{"Player": names.get(e, e), "Email": e, "Balance": round(float(amt),2)} for e,amt in balances.items()]
     df = pd.DataFrame(entries).sort_values(by="Balance", ascending=False).reset_index(drop=True)
+
     st.subheader("Current balances")
     st.caption("Positive means the player **owes** the payer. Negative means they have **credit**.")
     st.dataframe(df[["Player","Email","Balance"]].style.format({"Balance":"£{:.2f}"}), use_container_width=True)
 
     me = signed_in_email(); monzo_user = payer_monzo_username(); payer = payer_email
+
+    # --- Log payment (self only) ---
     st.divider(); st.subheader("Log a payment (you only)")
     if me == payer:
         st.info("You're the payer. Players log their own payments; you can't log on behalf of others.", icon="ℹ️")
@@ -284,16 +301,67 @@ def page_balances(tabs, sessions, regs, pays, players):
                     append_row(tabs["payments"], [me, name, amount, to_iso_date(paid_at), note])
                     toast_ok("Payment recorded.")
 
-    st.divider(); st.subheader("WhatsApp settle‑up message")
+    # --- WhatsApp settle-up ---
+    st.divider(); st.subheader("WhatsApp settle‑up")
+
+    # Combined settle-up text
     lines = [f"Hi all — settle‑up for {group_name()}:", ""]
     for _, row in df.iterrows():
         if row["Email"] == payer_email: continue
         if row["Balance"] > 0.0:
             part = f"- {row['Player']}: {currency(row['Balance'])}"
-            if monzo_user: part += f" → {monzo_request_link(monzo_user, row['Balance'], f'Padel {group_name()}')}"
+            if monzo_user:
+                part += f" → {monzo_request_link(monzo_user, row['Balance'], f'Padel {group_name()}')}"
             lines.append(part)
     wa_text = "\n".join(lines) if len(lines) > 2 else "No one owes anything right now 🎉"
-    st.text_area("Copy & paste into WhatsApp:", value=wa_text, height=200)
+
+    # Option A: Open WhatsApp share composer (payer chooses recipients)
+    st.caption("Option A — open the WhatsApp share composer and pick recipients:")
+    share_url = f"https://wa.me/?text={quote(wa_text)}"
+    try:
+        st.link_button("Open WhatsApp", share_url, use_container_width=True)
+    except Exception:
+        st.markdown(f"[Open WhatsApp]({share_url})")
+
+    # Option B: Personalised chats to selected players (only those who owe and have a number)
+    owe_df = df[(df["Balance"] > 0) & (df["Email"] != payer_email)].copy()
+    owe_df["WhatsApp"] = owe_df["Email"].map(wa_map).fillna("")
+    owe_df["wa_clean"] = owe_df["WhatsApp"].map(wa_sanitise_number)
+
+    st.caption("Option B — open individual chats (only for players with WhatsApp numbers):")
+    options = []
+    for _, r in owe_df.iterrows():
+        if r["wa_clean"]:
+            options.append(f"{r['Player']}  (+{r['wa_clean']})")
+
+    if options:
+        selected = st.multiselect("Select players", options, help="We’ll open one chat per selected player with their own amount.")
+        # Build a mapping from display string to data
+        display_map = {f"{r['Player']}  (+{r['wa_clean']})": r for _, r in owe_df.iterrows() if r["wa_clean"]}
+        cols = st.columns(2)
+        i = 0
+        for disp in selected:
+            r = display_map[disp]
+            num = r["wa_clean"]
+            person = r["Player"]
+            amt = r["Balance"]
+            # personalised message
+            base = f"Hi {person} — please settle {currency(amt)} for {group_name()}"
+            if monzo_user:
+                link = monzo_request_link(monzo_user, amt, f"Padel {group_name()}")
+                base += f" → {link}"
+            person_text = base
+            url = f"https://wa.me/{num}?text={quote(person_text)}"
+            with cols[i % 2]:
+                try:
+                    st.link_button(f"Open chat with {person}", url, use_container_width=True)
+                except Exception:
+                    st.markdown(f"[Open chat with {person}]({url})")
+            i += 1
+    else:
+        st.info("No selected players have WhatsApp numbers saved. Ask players to add their number on **Profile**.", icon="ℹ️")
+
+    st.caption("On desktop this opens WhatsApp Web; on mobile it opens the WhatsApp app.")
 
 def _derived_name_from_email(email: str) -> str:
     local = (email or "").split("@")[0]
